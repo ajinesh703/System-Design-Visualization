@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Event Sourcing — Animated</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: #f8f7f2;
+  color: #2d2d2d;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 16px 30px;
+}
+
+h1 {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 3px;
+  letter-spacing: -.01em;
+}
+.subtitle {
+  font-size: 11px;
+  color: #94a3b8;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  margin-bottom: 18px;
+}
+
+/* ── CANVAS ─────────────────────────────── */
+.canvas {
+  position: relative;
+  width: 720px;
+  height: 480px;
+  margin: 0 auto;
+}
+
+/* ── SVG STATIC LINES ───────────────────── */
+.bg-svg {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  overflow: visible;
+}
+
+/* ── NODE BASE ───────────────────────────── */
+.nd {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.25;
+  cursor: pointer;
+  transition: filter .2s;
+  z-index: 5;
+  user-select: none;
+}
+.nd:hover { filter: brightness(1.08) drop-shadow(0 4px 10px rgba(0,0,0,.15)); }
+
+/* ── PRODUCER (diamond) ──────────────────── */
+#nd-producer {
+  left: 148px; top: 40px;
+  width: 110px; height: 110px;
+  color: #1a6b5c;
+}
+#nd-producer svg { width: 110px; height: 110px; position: absolute; top:0;left:0; }
+#nd-producer span { position: relative; z-index:2; font-size: 13px; }
+
+/* ── EVENT STORE (cylinder) ─────────────── */
+#nd-store {
+  left: 120px; top: 330px;
+  width: 120px; height: 130px;
+  color: #1a5f7a;
+}
+#nd-store svg { width:120px; height:130px; position:absolute; top:0;left:0; }
+#nd-store span { position:relative; z-index:2; font-size:13px; margin-top:30px; }
+
+/* ── EVENT BUS (cylinder horizontal) ─────── */
+#nd-bus {
+  left: 298px; top: 210px;
+  width: 130px; height: 68px;
+  color: #7a4d10;
+}
+#nd-bus svg { width:130px; height:68px; position:absolute; top:0;left:0; }
+#nd-bus span { position:relative; z-index:2; font-size:13px; }
+
+/* ── CONSUMER (circle) ───────────────────── */
+#nd-consumer {
+  right: 60px; top: 180px;
+  width: 100px; height: 100px;
+  color: #7a2020;
+}
+#nd-consumer svg { width:100px; height:100px; position:absolute; top:0;left:0; }
+#nd-consumer span { position:relative; z-index:2; font-size:13px; }
+
+/* ── DATABASE (cylinder) ─────────────────── */
+#nd-db {
+  right: 44px; top: 50px;
+  width: 110px; height: 100px;
+  color: #2d6a1e;
+}
+#nd-db svg { width:110px; height:100px; position:absolute; top:0;left:0; }
+#nd-db span { position:relative; z-index:2; font-size:13px; margin-top:14px; }
+
+/* ── REPLAY (triangle / play) ───────────── */
+#nd-replay {
+  right: 44px; top: 370px;
+  width: 110px; height: 90px;
+  color: #1e3f7a;
+}
+#nd-replay svg { width:110px; height:90px; position:absolute; top:0;left:0; }
+#nd-replay span { position:relative; z-index:2; font-size:13px; }
+
+/* ── EVENT DOTS (flowing events) ─────────── */
+.evt-dot {
+  position: absolute;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.7);
+  z-index: 15;
+  opacity: 0;
+  pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 700; color: #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,.25);
+}
+
+/* ── PATH PACKETS ─────────────────────────── */
+.pkt {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 20;
+  opacity: 0;
+  box-shadow: 0 0 6px 2px rgba(0,0,0,.15);
+}
+
+/* ── STEP LABEL ───────────────────────────── */
+.step-label {
+  position: absolute;
+  font-size: 10px;
+  font-style: italic;
+  color: #64748b;
+  pointer-events: none;
+  z-index: 6;
+  background: #f8f7f2;
+  padding: 1px 4px;
+  border-radius: 4px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity .3s;
+}
+
+/* ── NODE PULSE ───────────────────────────── */
+@keyframes nd-pulse {
+  0%   { filter: brightness(1.2) drop-shadow(0 0 0px rgba(0,0,0,.3)); }
+  50%  { filter: brightness(1.3) drop-shadow(0 0 12px rgba(0,0,0,.35)); }
+  100% { filter: brightness(1)   drop-shadow(0 0 0px rgba(0,0,0,.0)); }
+}
+.flash { animation: nd-pulse .5s ease-out; }
+
+/* ── QUEUE DOTS ───────────────────────────── */
+.queue-dot {
+  position: absolute;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.6);
+  z-index: 8;
+  font-size: 8px; font-weight: 700; color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 6px rgba(0,0,0,.2);
+  transition: top .4s ease;
+}
+
+/* ── LOG ──────────────────────────────────── */
+.log-wrap {
+  width: 720px;
+  margin: 10px auto 0;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.log-hdr {
+  padding: 6px 14px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #94a3b8;
+  border-bottom: 1px solid #f1f5f9;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.log-body {
+  height: 80px;
+  overflow-y: auto;
+  padding: 6px 14px;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  line-height: 1.7;
+}
+.lp { color: #059669; }
+.lb { color: #d97706; }
+.lc { color: #dc2626; }
+.ls { color: #2563eb; }
+.lr { color: #7c3aed; }
+@keyframes slide-in { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+.le { animation: slide-in .25s ease; }
+
+/* ── CONTROLS ─────────────────────────────── */
+.controls {
+  display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;
+  margin: 12px 0 0;
+}
+.btn {
+  font-size: 12px; font-weight: 600;
+  padding: 7px 16px; border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #fff; color: #1e293b;
+  cursor: pointer; transition: background .15s;
+}
+.btn:hover { background: #f1f5f9; }
+.btn.active { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
+
+.speed-row {
+  display: flex; align-items: center; gap: 8px; justify-content: center;
+  margin: 8px 0 0; font-size: 11px; color: #94a3b8;
+}
+input[type=range] { width: 80px; accent-color: #7c3aed; }
+</style>
+</head>
+<body>
+
+<h1>Event Sourcing</h1>
+<div class="subtitle">Interactive architecture animation</div>
+
+<div class="canvas" id="canvas">
+
+  <!-- ── STATIC DASHED LINES ── -->
+  <svg class="bg-svg" id="bg-svg" viewBox="0 0 720 480">
+    <defs>
+      <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M2 1L8 5L2 9" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </marker>
+      <marker id="arr-r" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M2 1L8 5L2 9" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </marker>
+    </defs>
+
+    <!-- Producer → Event Store (vertical) -->
+    <line x1="203" y1="150" x2="203" y2="338" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="6 5" marker-end="url(#arr)"/>
+
+    <!-- Event Store → Event Bus (diagonal) -->
+    <line x1="240" y1="370" x2="306" y2="248" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="6 5" marker-end="url(#arr)"/>
+
+    <!-- Event Bus → Consumer -->
+    <line x1="428" y1="244" x2="548" y2="232" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="6 5" marker-end="url(#arr)"/>
+
+    <!-- Consumer → Database -->
+    <line x1="598" y1="180" x2="598" y2="148" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="6 5" marker-end="url(#arr)"/>
+
+    <!-- Database → Producer (materialized view feedback) -->
+    <line x1="548" y1="100" x2="265" y2="100" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="6 5" marker-end="url(#arr)"/>
+
+    <!-- Event Store → Replay -->
+    <line x1="240" y1="420" x2="548" y2="420" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="6 5" marker-end="url(#arr)"/>
+
+    <!-- Static labels -->
+    <text x="310" y="94" font-size="11" fill="#94a3b8" font-style="italic" font-family="Segoe UI,sans-serif">Materialized view</text>
+    <text x="265" y="300" font-size="10" fill="#94a3b8" font-style="italic" font-family="Segoe UI,sans-serif" transform="rotate(-52,265,300)">Publish event</text>
+    <text x="440" y="236" font-size="11" fill="#94a3b8" font-style="italic" font-family="Segoe UI,sans-serif">Consume Event</text>
+    <text x="316" y="412" font-size="11" fill="#94a3b8" font-style="italic" font-family="Segoe UI,sans-serif">Replay events</text>
+    <text x="186" y="255" font-size="10" fill="#94a3b8" font-style="italic" font-family="Segoe UI,sans-serif" transform="rotate(-90,186,255)">Events</text>
+  </svg>
+
+  <!-- ── NODES ── -->
+
+  <!-- PRODUCER -->
+  <div class="nd" id="nd-producer" onclick="fireProducer()" title="Click to produce event">
+    <svg viewBox="0 0 110 110">
+      <rect x="15" y="15" width="80" height="80" rx="6"
+        transform="rotate(45 55 55)"
+        fill="#d1fae5" stroke="#34d399" stroke-width="2.5"
+        stroke-dasharray="6 3"/>
+    </svg>
+    <span>Producer</span>
+  </div>
+
+  <!-- EVENT STORE -->
+  <div class="nd" id="nd-store" title="Event Store — immutable log">
+    <svg viewBox="0 0 120 130">
+      <!-- cylinder body -->
+      <rect x="8" y="30" width="104" height="85" rx="6" fill="#bae6fd" stroke="#38bdf8" stroke-width="2" stroke-dasharray="6 3"/>
+      <!-- top ellipse -->
+      <ellipse cx="60" cy="30" rx="52" ry="16" fill="#7dd3fc" stroke="#38bdf8" stroke-width="2" stroke-dasharray="6 3"/>
+      <!-- shine line -->
+      <ellipse cx="60" cy="30" rx="52" ry="16" fill="none" stroke="#e0f2fe" stroke-width="1.5" opacity=".6"/>
+    </svg>
+    <span>Event<br>Store</span>
+  </div>
+
+  <!-- EVENT BUS -->
+  <div class="nd" id="nd-bus" title="Event Bus / Broker">
+    <svg viewBox="0 0 130 68">
+      <!-- horizontal cylinder -->
+      <rect x="18" y="8" width="94" height="52" rx="6" fill="#fef3c7" stroke="#f59e0b" stroke-width="2" stroke-dasharray="6 3"/>
+      <ellipse cx="18" cy="34" rx="10" ry="26" fill="#fde68a" stroke="#f59e0b" stroke-width="2" stroke-dasharray="6 3"/>
+      <ellipse cx="112" cy="34" rx="10" ry="26" fill="#fde68a" stroke="#f59e0b" stroke-width="2" stroke-dasharray="6 3"/>
+    </svg>
+    <span>Event Bus</span>
+  </div>
+
+  <!-- CONSUMER -->
+  <div class="nd" id="nd-consumer" title="Consumer Service">
+    <svg viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="44" fill="#fee2e2" stroke="#f87171" stroke-width="2.5" stroke-dasharray="6 3"/>
+    </svg>
+    <span>Consumer</span>
+  </div>
+
+  <!-- DATABASE -->
+  <div class="nd" id="nd-db" title="Read Model / Database">
+    <svg viewBox="0 0 110 100">
+      <rect x="6" y="30" width="98" height="60" rx="6" fill="#dcfce7" stroke="#4ade80" stroke-width="2" stroke-dasharray="6 3"/>
+      <ellipse cx="55" cy="30" rx="49" ry="16" fill="#86efac" stroke="#4ade80" stroke-width="2" stroke-dasharray="6 3"/>
+    </svg>
+    <span>Database</span>
+  </div>
+
+  <!-- REPLAY -->
+  <div class="nd" id="nd-replay" title="Event Replay">
+    <svg viewBox="0 0 110 90">
+      <!-- play triangle -->
+      <polygon points="12,8 98,45 12,82" fill="#dbeafe" stroke="#60a5fa" stroke-width="2.5" stroke-dasharray="6 3" stroke-linejoin="round"/>
+    </svg>
+    <span>Replay</span>
+  </div>
+
+  <!-- Queue of dots beside producer -->
+  <div id="queue" style="position:absolute;left:215px;top:155px;width:20px;height:150px;"></div>
+
+  <!-- Packet layer -->
+  <div id="pkts" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:20;"></div>
+</div>
+
+<!-- LOG -->
+<div class="log-wrap">
+  <div class="log-hdr">
+    <span>System log</span>
+    <span style="color:#cbd5e1;font-weight:400">immutable append-only event stream</span>
+  </div>
+  <div class="log-body" id="log"></div>
+</div>
+
+<!-- CONTROLS -->
+<div class="controls">
+  <button class="btn" onclick="fireProducer()">⚡ Produce Event</button>
+  <button class="btn" onclick="doReplay()">⏪ Replay Events</button>
+  <button class="btn" id="auto-btn" onclick="toggleAuto()">▶ Auto Demo</button>
+</div>
+<div class="speed-row">
+  Speed <input type="range" min="0.4" max="3" step="0.1" value="1" oninput="spd=parseFloat(this.value)">
+</div>
+
+<script>
+/* ── STATE ── */
+let spd = 1;
+let autoTimer = null;
+let eventSeq = 0;
+let storeCount = 0;
+const maxStore = 5;
+
+const evtTypes = [
+  { name:'OrderPlaced',   color:'#f97316', bg:'#fff7ed' },
+  { name:'UserSignedUp',  color:'#8b5cf6', bg:'#f5f3ff' },
+  { name:'PaymentDone',   color:'#10b981', bg:'#ecfdf5' },
+  { name:'InventoryLow',  color:'#ef4444', bg:'#fef2f2' },
+  { name:'ItemShipped',   color:'#3b82f6', bg:'#eff6ff' },
+];
+
+/* ── UTILS ── */
+function d(ms) { return ms / spd; }
+
+function center(el) {
+  const cr = document.getElementById('canvas').getBoundingClientRect();
+  const er = el.getBoundingClientRect();
+  return { x: er.left - cr.left + er.width/2, y: er.top - cr.top + er.height/2 };
+}
+
+function movePkt(fromEl, toEl, color, size, onDone) {
+  const f = center(fromEl), t = center(toEl);
+  const pkt = document.createElement('div');
+  pkt.className = 'pkt';
+  const sz = size || 14;
+  pkt.style.cssText = `width:${sz}px;height:${sz}px;background:${color};left:${f.x-sz/2}px;top:${f.y-sz/2}px;opacity:1;border:2px solid rgba(255,255,255,.7);`;
+  document.getElementById('pkts').appendChild(pkt);
+  const dist = Math.hypot(t.x-f.x, t.y-f.y);
+  const dur  = Math.max(300, dist/(180*spd)*1000);
+  pkt.animate([
+    { left:(f.x-sz/2)+'px', top:(f.y-sz/2)+'px', opacity:1 },
+    { left:(t.x-sz/2)+'px', top:(t.y-sz/2)+'px', opacity:1 }
+  ], { duration: dur, easing:'cubic-bezier(.4,0,.2,1)', fill:'forwards' })
+  .finished.then(() => { pkt.remove(); if (onDone) onDone(); });
+}
+
+function movePktPath(points, color, size, onDone) {
+  // Animate along multiple waypoints
+  const sz = size || 14;
+  const pkt = document.createElement('div');
+  pkt.className = 'pkt';
+  const f = points[0];
+  pkt.style.cssText = `width:${sz}px;height:${sz}px;background:${color};left:${f.x-sz/2}px;top:${f.y-sz/2}px;opacity:1;border:2px solid rgba(255,255,255,.7);`;
+  document.getElementById('pkts').appendChild(pkt);
+  let i = 0;
+  function step() {
+    if (i >= points.length-1) { pkt.remove(); if (onDone) onDone(); return; }
+    const from = points[i], to = points[i+1];
+    const dist = Math.hypot(to.x-from.x, to.y-from.y);
+    const dur = Math.max(200, dist/(180*spd)*1000);
+    pkt.animate([
+      { left:(from.x-sz/2)+'px', top:(from.y-sz/2)+'px' },
+      { left:(to.x-sz/2)+'px',   top:(to.y-sz/2)+'px' }
+    ], { duration: dur, easing:'ease-in-out', fill:'forwards' })
+    .finished.then(() => { i++; step(); });
+  }
+  step();
+}
+
+function flash(el) {
+  el.classList.remove('flash');
+  void el.offsetWidth;
+  el.classList.add('flash');
+  setTimeout(() => el.classList.remove('flash'), 600);
+}
+
+function log(cls, msg) {
+  const ts = new Date().toLocaleTimeString('en-GB',{hour12:false});
+  const el = document.createElement('div');
+  el.className = 'le';
+  el.innerHTML = `<span style="color:#cbd5e1">${ts}</span> <span class="${cls}">${msg}</span>`;
+  const lb = document.getElementById('log');
+  lb.appendChild(el);
+  lb.scrollTop = lb.scrollHeight;
+  if (lb.children.length > 50) lb.removeChild(lb.firstChild);
+}
+
+/* ── STORE DOTS (visual queue) ── */
+const storeDots = [];
+function addStoreDot(evt) {
+  if (storeCount >= maxStore) {
+    // shift old ones up
+    storeDots.forEach((d, i) => {
+      d.style.top = (i * 22) + 'px';
+    });
+    const oldest = storeDots.shift();
+    oldest.remove();
+    storeCount--;
+  }
+  const dot = document.createElement('div');
+  dot.className = 'queue-dot';
+  dot.style.cssText = `background:${evt.color};top:${storeCount*22}px;left:0;`;
+  dot.textContent = (eventSeq % 10).toString();
+  document.getElementById('queue').appendChild(dot);
+  storeDots.push(dot);
+  storeCount++;
+}
+
+/* ── MAIN FLOW ── */
+function fireProducer() {
+  const evt = evtTypes[eventSeq % evtTypes.length];
+  eventSeq++;
+  const pEl  = document.getElementById('nd-producer');
+  const sEl  = document.getElementById('nd-store');
+  const busEl = document.getElementById('nd-bus');
+  const cEl  = document.getElementById('nd-consumer');
+  const dbEl = document.getElementById('nd-db');
+
+  flash(pEl);
+  log('lp', `[Producer] Emitting → <b>${evt.name}</b> #${eventSeq}`);
+
+  // 1. Producer → Event Store
+  movePkt(pEl, sEl, evt.color, 14, () => {
+    flash(sEl);
+    addStoreDot(evt);
+    log('ls', `[Event Store] Appended ${evt.name} #${eventSeq} (immutable)`);
+
+    // 2. Event Store → Event Bus (diagonal)
+    setTimeout(() => {
+      movePkt(sEl, busEl, evt.color, 13, () => {
+        flash(busEl);
+        log('lb', `[Event Bus] Published ${evt.name} → broadcasting to subscribers`);
+
+        // 3. Event Bus → Consumer
+        setTimeout(() => {
+          movePkt(busEl, cEl, evt.color, 12, () => {
+            flash(cEl);
+            log('lc', `[Consumer] Consumed ${evt.name} → projecting state`);
+
+            // 4. Consumer → Database
+            setTimeout(() => {
+              movePkt(cEl, dbEl, '#4ade80', 11, () => {
+                flash(dbEl);
+                log('ls', `[Database] Read model updated (materialized view)`);
+
+                // 5. Database → Producer (materialized view feedback)
+                setTimeout(() => {
+                  movePkt(dbEl, pEl, '#94a3b8', 9, () => {
+                    flash(pEl);
+                    log('lp', `[Producer] Materialized view received ✓`);
+                  });
+                }, d(200));
+              });
+            }, d(180));
+          });
+        }, d(150));
+      });
+    }, d(250));
+  });
+}
+
+/* ── REPLAY FLOW ── */
+function doReplay() {
+  if (storeCount === 0) {
+    log('lr', '[Replay] No events in store yet — produce some first!');
+    return;
+  }
+  const sEl    = document.getElementById('nd-store');
+  const repEl  = document.getElementById('nd-replay');
+  const cEl    = document.getElementById('nd-consumer');
+  const dbEl   = document.getElementById('nd-db');
+
+  log('lr', `[Replay] Re-playing ${storeCount} event(s) from Event Store…`);
+  flash(sEl);
+
+  // Store → Replay
+  movePkt(sEl, repEl, '#818cf8', 13, () => {
+    flash(repEl);
+    log('lr', `[Replay] Rebuilding state from event log…`);
+
+    // Replay → Consumer → DB (re-project)
+    setTimeout(() => {
+      movePkt(repEl, cEl, '#818cf8', 12, () => {
+        flash(cEl);
+        log('lc', `[Consumer] Re-projecting events…`);
+        setTimeout(() => {
+          movePkt(cEl, dbEl, '#4ade80', 11, () => {
+            flash(dbEl);
+            log('lr', `[Replay] State fully rebuilt ✓`);
+          });
+        }, d(200));
+      });
+    }, d(200));
+  });
+}
+
+/* ── AUTO DEMO ── */
+function toggleAuto() {
+  const btn = document.getElementById('auto-btn');
+  if (autoTimer) {
+    clearInterval(autoTimer);
+    autoTimer = null;
+    btn.textContent = '▶ Auto Demo';
+    btn.classList.remove('active');
+  } else {
+    btn.textContent = '⏹ Stop Demo';
+    btn.classList.add('active');
+    let tick = 0;
+    autoTimer = setInterval(() => {
+      if (tick % 5 === 4) doReplay();
+      else fireProducer();
+      tick++;
+    }, d(2400));
+  }
+}
+
+/* ── INIT ── */
+log('ls', '[System] Event Sourcing ready — click ⚡ Produce Event or ▶ Auto Demo');
+</script>
+</body>
+</html>
