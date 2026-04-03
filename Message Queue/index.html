@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Message Queue — System Design</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: #0d1117;
+  color: #e2e8f0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 22px 16px 30px;
+}
+
+h1 { font-size: 22px; font-weight: 700; color: #f1f5f9; margin-bottom: 3px; letter-spacing: -.01em; }
+.subtitle { font-size: 11px; color: #475569; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 22px; }
+
+/* ═══ CANVAS ════════════════════════════════ */
+.canvas {
+  position: relative;
+  width: 860px;
+  height: 430px;
+}
+
+/* ═══ SECTION LABELS ═══════════════════════ */
+.sec-label {
+  position: absolute;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: #334155;
+  top: 10px;
+  text-align: center;
+}
+
+/* ═══ DIVIDER LINES ═════════════════════════ */
+.divider {
+  position: absolute;
+  top: 30px;
+  bottom: 20px;
+  width: 1px;
+  background: #1e293b;
+}
+
+/* ═══ NODE BASE ═════════════════════════════ */
+.nd {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+  z-index: 5;
+  transition: filter .2s;
+}
+.nd:hover { filter: brightness(1.12); }
+
+/* Producer boxes */
+.prod-box {
+  width: 110px;
+  border-radius: 10px;
+  border: 1.5px solid;
+  padding: 10px 6px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+.prod-icon { font-size: 22px; }
+.prod-name { font-size: 11px; font-weight: 700; line-height: 1.2; }
+.prod-sub  { font-size: 9px;  opacity: .65; }
+
+/* Queue rack */
+#queue-rack {
+  position: absolute;
+  left: 300px; top: 60px;
+  width: 260px; height: 310px;
+  background: #111827;
+  border: 1.5px solid #1e3a5f;
+  border-radius: 14px;
+  overflow: hidden;
+  z-index: 4;
+}
+.queue-header {
+  background: #0f2137;
+  padding: 8px 12px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #60a5fa;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  border-bottom: 1px solid #1e3a5f;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.queue-header span { font-size: 15px; }
+.queue-inner {
+  position: relative;
+  height: 255px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  overflow: hidden;
+}
+
+/* Individual message slots */
+.msg-slot {
+  height: 42px;
+  border-radius: 8px;
+  border: 1px solid;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  transition: transform .3s ease, opacity .3s ease;
+  position: relative;
+  flex-shrink: 0;
+}
+.msg-slot .msg-id   { font-size: 9px; opacity: .6; margin-left: auto; font-weight: 400; }
+.msg-slot .msg-icon { font-size: 16px; }
+.msg-slot .msg-body { line-height: 1.2; }
+.msg-slot .msg-status {
+  position: absolute;
+  right: 8px; top: 4px;
+  font-size: 8px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  letter-spacing: .04em;
+}
+
+/* Queue empty state */
+.queue-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #1e3a5f;
+  font-size: 11px;
+  gap: 4px;
+}
+.queue-empty-icon { font-size: 28px; opacity: .3; }
+
+/* Consumer boxes */
+.cons-box {
+  width: 110px;
+  border-radius: 10px;
+  border: 1.5px solid;
+  padding: 10px 6px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+.cons-icon { font-size: 22px; }
+.cons-name { font-size: 11px; font-weight: 700; line-height: 1.2; }
+.cons-sub  { font-size: 9px;  opacity: .65; }
+
+/* Status badge on consumers */
+.cons-badge {
+  font-size: 8px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 10px;
+  letter-spacing: .04em;
+  margin-top: 2px;
+}
+.badge-idle    { background: #1e293b; color: #475569; }
+.badge-busy    { background: #172554; color: #60a5fa; }
+.badge-done    { background: #14532d; color: #4ade80; }
+
+/* Processing ring animation */
+@keyframes spin-ring {
+  to { stroke-dashoffset: 0; }
+}
+.proc-ring {
+  position: absolute;
+  top: -4px; left: -4px;
+  width: calc(100% + 8px);
+  height: calc(100% + 8px);
+  border-radius: 14px;
+  border: 2px solid transparent;
+  pointer-events: none;
+}
+
+/* Flash animation */
+@keyframes flash-anim {
+  0%   { filter: brightness(1.5) drop-shadow(0 0 8px currentColor); }
+  100% { filter: brightness(1); }
+}
+.flashing { animation: flash-anim .5s ease-out; }
+
+/* Throughput bar */
+.tput-bar-wrap {
+  position: absolute;
+  bottom: 10px;
+  left: 0; right: 0;
+  padding: 0 14px;
+}
+.tput-label { font-size: 9px; color: #334155; margin-bottom: 3px; }
+.tput-track { height: 4px; background: #1e293b; border-radius: 2px; overflow: hidden; }
+.tput-fill  { height: 100%; background: linear-gradient(90deg, #2563eb, #7c3aed); border-radius: 2px; transition: width .5s ease; }
+
+/* DLQ badge */
+.dlq-badge {
+  position: absolute;
+  top: -8px; right: -8px;
+  background: #7f1d1d;
+  color: #fca5a5;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 5px;
+  border-radius: 6px;
+  border: 1px solid #991b1b;
+  z-index: 10;
+}
+
+/* ═══ MOVING PACKETS ════════════════════════ */
+.pkt {
+  position: absolute;
+  border-radius: 8px;
+  pointer-events: none;
+  z-index: 30;
+  opacity: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  border: 1.5px solid rgba(255,255,255,.25);
+  padding: 0 6px;
+  white-space: nowrap;
+  box-shadow: 0 2px 12px rgba(0,0,0,.4);
+}
+
+/* ═══ CONNECTORS ════════════════════════════ */
+.bg-svg {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 2;
+  overflow: visible;
+}
+
+/* ═══ LOG ════════════════════════════════════ */
+.log-wrap {
+  width: 860px;
+  margin: 12px auto 0;
+  background: #0a0d14;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.log-hdr {
+  padding: 7px 14px;
+  font-size: 10px; font-weight: 700;
+  color: #334155;
+  border-bottom: 1px solid #1e293b;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.log-body {
+  height: 76px;
+  overflow-y: auto;
+  padding: 5px 14px;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  line-height: 1.75;
+}
+@keyframes slide-in { from { opacity:0; transform:translateY(3px); } to { opacity:1; } }
+.le { animation: slide-in .2s ease; }
+.lp { color: #60a5fa; }
+.lq { color: #a78bfa; }
+.lc { color: #34d399; }
+.le-err { color: #f87171; }
+
+/* ═══ CONTROLS ══════════════════════════════ */
+.controls {
+  display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;
+  margin: 12px 0 0;
+}
+.btn {
+  font-size: 12px; font-weight: 600;
+  padding: 7px 16px; border-radius: 8px;
+  border: 1px solid #1e293b;
+  background: #111827; color: #e2e8f0;
+  cursor: pointer; transition: background .15s, border-color .15s;
+}
+.btn:hover  { background: #1e293b; border-color: #334155; }
+.btn.active { background: #1e1b4b; border-color: #818cf8; color: #c7d2fe; }
+.btn.danger { border-color: #7f1d1d; color: #fca5a5; }
+.btn.danger:hover { background: #1c0a0a; }
+
+.speed-row {
+  display: flex; align-items: center; gap: 8px; justify-content: center;
+  margin: 8px 0 0; font-size: 11px; color: #475569;
+}
+input[type=range] { width: 80px; accent-color: #7c3aed; }
+
+/* ═══ STATS BAR ══════════════════════════════ */
+.stats-bar {
+  display: flex; gap: 16px; justify-content: center;
+  margin: 10px 0 0; flex-wrap: wrap;
+}
+.stat-pill {
+  background: #111827;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  padding: 5px 14px;
+  font-size: 11px;
+  color: #64748b;
+  display: flex; align-items: center; gap: 6px;
+}
+.stat-pill b { color: #e2e8f0; font-size: 14px; font-weight: 700; }
+</style>
+</head>
+<body>
+
+<h1>Message Queue</h1>
+<div class="subtitle">System Design — Interactive Animation</div>
+
+<!-- STATS -->
+<div class="stats-bar">
+  <div class="stat-pill">Enqueued <b id="st-enq">0</b></div>
+  <div class="stat-pill">Processed <b id="st-proc">0</b></div>
+  <div class="stat-pill">In Queue <b id="st-iq">0</b></div>
+  <div class="stat-pill">Failed / DLQ <b id="st-dlq" style="color:#f87171">0</b></div>
+  <div class="stat-pill">Throughput <b id="st-tput">0</b> msg/s</div>
+</div>
+
+<div class="canvas" id="canvas">
+
+  <!-- Section labels -->
+  <div class="sec-label" style="left:20px;width:120px;">Producers</div>
+  <div class="sec-label" style="left:308px;width:244px;">Message Queue</div>
+  <div class="sec-label" style="left:618px;width:220px;">Consumers</div>
+
+  <!-- Dividers -->
+  <div class="divider" style="left:296px;"></div>
+  <div class="divider" style="left:572px;"></div>
+
+  <!-- ── PRODUCERS ── -->
+  <div class="nd" id="p0" style="left:18px;top:70px;" onclick="enqueue(0)" title="Click to produce">
+    <div class="prod-box" style="background:#0c1a2e;border-color:#2563eb;color:#93c5fd;">
+      <div class="prod-icon">🌐</div>
+      <div class="prod-name">Web Server</div>
+      <div class="prod-sub">HTTP requests</div>
+    </div>
+  </div>
+  <div class="nd" id="p1" style="left:18px;top:190px;" onclick="enqueue(1)" title="Click to produce">
+    <div class="prod-box" style="background:#0d1f0d;border-color:#16a34a;color:#86efac;">
+      <div class="prod-icon">📱</div>
+      <div class="prod-name">Mobile App</div>
+      <div class="prod-sub">push events</div>
+    </div>
+  </div>
+  <div class="nd" id="p2" style="left:18px;top:310px;" onclick="enqueue(2)" title="Click to produce">
+    <div class="prod-box" style="background:#1c0a2e;border-color:#7c3aed;color:#c4b5fd;">
+      <div class="prod-icon">⚙️</div>
+      <div class="prod-name">Cron Job</div>
+      <div class="prod-sub">scheduled tasks</div>
+    </div>
+  </div>
+
+  <!-- ── QUEUE RACK ── -->
+  <div id="queue-rack">
+    <div class="queue-header">
+      <span>📬</span> Message Queue
+    </div>
+    <div class="queue-inner" id="queue-inner">
+      <div class="queue-empty" id="queue-empty">
+        <div class="queue-empty-icon">📭</div>
+        <div>Queue is empty</div>
+      </div>
+    </div>
+    <div class="tput-bar-wrap">
+      <div class="tput-label">Queue pressure</div>
+      <div class="tput-track"><div class="tput-fill" id="tput-fill" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <!-- ── CONSUMERS ── -->
+  <div class="nd" id="c0" style="left:618px;top:60px;" title="Email Worker">
+    <div class="cons-box" style="background:#0c1a2e;border-color:#0ea5e9;color:#7dd3fc;position:relative;">
+      <div class="cons-icon">📧</div>
+      <div class="cons-name">Email Worker</div>
+      <div class="cons-sub">notifications</div>
+      <div class="cons-badge badge-idle" id="badge-c0">IDLE</div>
+    </div>
+  </div>
+  <div class="nd" id="c1" style="left:618px;top:175px;" title="Image Processor">
+    <div class="cons-box" style="background:#1a0c2e;border-color:#a855f7;color:#d8b4fe;position:relative;">
+      <div class="cons-icon">🖼️</div>
+      <div class="cons-name">Image Worker</div>
+      <div class="cons-sub">resize / compress</div>
+      <div class="cons-badge badge-idle" id="badge-c1">IDLE</div>
+    </div>
+  </div>
+  <div class="nd" id="c2" style="left:618px;top:290px;" title="Analytics Worker">
+    <div class="cons-box" style="background:#0d1f0d;border-color:#22c55e;color:#86efac;position:relative;">
+      <div class="cons-icon">📊</div>
+      <div class="cons-name">Analytics</div>
+      <div class="cons-sub">data pipeline</div>
+      <div class="cons-badge badge-idle" id="badge-c2">IDLE</div>
+    </div>
+  </div>
+
+  <!-- DLQ node (dead letter queue) -->
+  <div class="nd" id="dlq" style="left:730px;top:385px;" title="Dead Letter Queue">
+    <div class="prod-box" style="background:#1c0505;border-color:#991b1b;color:#fca5a5;width:90px;padding:6px;">
+      <div class="prod-icon">💀</div>
+      <div class="prod-name" style="font-size:10px;">Dead Letter<br>Queue</div>
+    </div>
+  </div>
+
+  <!-- SVG arrows -->
+  <svg class="bg-svg" viewBox="0 0 860 430">
+    <defs>
+      <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+        <path d="M2 1L8 5L2 9" fill="none" stroke="#334155" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </marker>
+    </defs>
+    <!-- Producers → Queue -->
+    <line x1="130" y1="110" x2="300" y2="160" stroke="#1e3a5f" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#ah)"/>
+    <line x1="130" y1="230" x2="300" y2="215" stroke="#14532d" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#ah)"/>
+    <line x1="130" y1="350" x2="300" y2="270" stroke="#3b0764" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#ah)"/>
+    <!-- Queue → Consumers -->
+    <line x1="562" y1="160" x2="618" y2="110" stroke="#1e3a5f" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#ah)"/>
+    <line x1="562" y1="215" x2="618" y2="225" stroke="#3b0764" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#ah)"/>
+    <line x1="562" y1="270" x2="618" y2="330" stroke="#14532d" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#ah)"/>
+    <!-- Failed → DLQ -->
+    <line x1="728" y1="345" x2="755" y2="390" stroke="#7f1d1d" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#ah)" opacity=".6"/>
+  </svg>
+
+  <!-- Packet layer -->
+  <div id="pkts" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:30;"></div>
+</div>
+
+<!-- LOG -->
+<div class="log-wrap">
+  <div class="log-hdr">
+    <span>Message Log</span>
+    <span style="color:#1e293b">FIFO — First In, First Out</span>
+  </div>
+  <div class="log-body" id="log"></div>
+</div>
+
+<!-- CONTROLS -->
+<div class="controls">
+  <button class="btn" onclick="enqueue(0)">🌐 Web Server → Queue</button>
+  <button class="btn" onclick="enqueue(1)">📱 Mobile App → Queue</button>
+  <button class="btn" onclick="enqueue(2)">⚙️ Cron Job → Queue</button>
+  <button class="btn" onclick="burstMode()" title="Flood the queue">💥 Burst Load</button>
+  <button class="btn danger" onclick="simulateFail()">⚠️ Simulate Failure</button>
+  <button class="btn" id="auto-btn" onclick="toggleAuto()">▶ Auto Demo</button>
+</div>
+<div class="speed-row">
+  Speed <input type="range" min="0.3" max="3" step="0.1" value="1" oninput="spd=parseFloat(this.value)">
+</div>
+
+<script>
+/* ══════ CONFIG ══════ */
+let spd = 1;
+let autoTimer = null;
+let msgId = 0;
+let enqCount = 0, procCount = 0, dlqCount = 0;
+const MAX_QUEUE = 5;
+const CONSUMERS = 3;
+
+const msgTypes = [
+  { label:'Send Email',   icon:'📧', color:'#1d4ed8', bg:'#0c1a2e', border:'#2563eb', text:'#93c5fd' },
+  { label:'Resize Image', icon:'🖼️', color:'#7c3aed', bg:'#1a0c2e', border:'#a855f7', text:'#d8b4fe' },
+  { label:'Log Event',    icon:'📊', color:'#15803d', bg:'#0d1f0d', border:'#22c55e', text:'#86efac' },
+  { label:'Send Push',    icon:'📱', color:'#b45309', bg:'#1c1004', border:'#f59e0b', text:'#fcd34d' },
+  { label:'Sync Data',    icon:'🔄', color:'#0e7490', bg:'#041318', border:'#06b6d4', text:'#67e8f9' },
+];
+
+const producerNames = ['Web Server','Mobile App','Cron Job'];
+const queueMessages = []; // { id, type, el }
+const consumerBusy  = [false, false, false];
+const consumerQueue = []; // pending dispatch jobs
+
+function d(ms) { return ms / spd; }
+
+function center(el) {
+  const cr = document.getElementById('canvas').getBoundingClientRect();
+  const er = el.getBoundingClientRect();
+  return { x: er.left - cr.left + er.width/2, y: er.top - cr.top + er.height/2 };
+}
+
+/* ══ PACKET ANIMATION ══ */
+function movePkt(fromEl, toEl, msg, onDone) {
+  const f = center(fromEl), t = center(toEl);
+  const pkt = document.createElement('div');
+  pkt.className = 'pkt';
+  const w = 80, h = 26;
+  pkt.style.cssText = `
+    width:${w}px;height:${h}px;
+    background:${msg.bg};border-color:${msg.border};
+    left:${f.x-w/2}px;top:${f.y-h/2}px;opacity:1;
+    color:${msg.text};
+  `;
+  pkt.innerHTML = `${msg.icon} ${msg.label}`;
+  document.getElementById('pkts').appendChild(pkt);
+  const dist = Math.hypot(t.x-f.x, t.y-f.y);
+  const dur  = Math.max(250, dist/(200*spd)*1000);
+  pkt.animate([
+    { left:(f.x-w/2)+'px', top:(f.y-h/2)+'px', opacity:1 },
+    { left:(t.x-w/2)+'px', top:(t.y-h/2)+'px', opacity:1 }
+  ], { duration:dur, easing:'cubic-bezier(.4,0,.2,1)', fill:'forwards' })
+  .finished.then(() => { pkt.remove(); if (onDone) onDone(); });
+}
+
+function flash(el) {
+  el.classList.remove('flashing');
+  void el.offsetWidth;
+  el.classList.add('flashing');
+  setTimeout(() => el.classList.remove('flashing'), 550);
+}
+
+/* ══ LOG ══ */
+function addLog(cls, msg) {
+  const ts = new Date().toLocaleTimeString('en-GB',{hour12:false});
+  const el = document.createElement('div');
+  el.className = 'le';
+  el.innerHTML = `<span style="color:#1e293b">${ts}</span> <span class="${cls}">${msg}</span>`;
+  const lb = document.getElementById('log');
+  lb.appendChild(el);
+  lb.scrollTop = lb.scrollHeight;
+  if (lb.children.length > 60) lb.removeChild(lb.firstChild);
+}
+
+/* ══ STATS ══ */
+function updateStats() {
+  document.getElementById('st-enq').textContent  = enqCount;
+  document.getElementById('st-proc').textContent = procCount;
+  document.getElementById('st-iq').textContent   = queueMessages.length;
+  document.getElementById('st-dlq').textContent  = dlqCount;
+  const pressure = Math.min(100, (queueMessages.length / MAX_QUEUE) * 100);
+  document.getElementById('tput-fill').style.width = pressure + '%';
+  document.getElementById('tput-fill').style.background =
+    pressure > 75 ? 'linear-gradient(90deg,#dc2626,#f87171)' :
+    pressure > 40 ? 'linear-gradient(90deg,#d97706,#fbbf24)' :
+                    'linear-gradient(90deg,#2563eb,#7c3aed)';
+}
+
+/* ══ THROUGHPUT COUNTER ══ */
+let tputBucket = 0;
+setInterval(() => {
+  document.getElementById('st-tput').textContent = tputBucket;
+  tputBucket = 0;
+}, 1000);
+
+/* ══ QUEUE RENDER ══ */
+function renderQueue() {
+  const inner = document.getElementById('queue-inner');
+  const empty = document.getElementById('queue-empty');
+  // Remove old slots
+  inner.querySelectorAll('.msg-slot').forEach(e => e.remove());
+  if (queueMessages.length === 0) {
+    empty.style.display = 'flex';
+  } else {
+    empty.style.display = 'none';
+    queueMessages.forEach((m, i) => {
+      const slot = document.createElement('div');
+      slot.className = 'msg-slot';
+      slot.id = 'slot-' + m.id;
+      slot.style.cssText = `background:${m.type.bg};border-color:${m.type.border};color:${m.type.text};`;
+      slot.innerHTML = `
+        <span class="msg-icon">${m.type.icon}</span>
+        <div class="msg-body">${m.type.label}</div>
+        <span class="msg-id">#${m.id}</span>
+        ${i === 0 ? `<div class="msg-status" style="background:#172554;color:#60a5fa;">NEXT</div>` : ''}
+      `;
+      inner.appendChild(slot);
+    });
+  }
+  updateStats();
+}
+
+/* ══ ENQUEUE ══ */
+function enqueue(pIdx) {
+  if (queueMessages.length >= MAX_QUEUE) {
+    addLog('le-err', `[Queue] ⚠️ Queue FULL (${MAX_QUEUE} msgs) — back-pressure applied`);
+    flash(document.getElementById('queue-rack'));
+    return;
+  }
+  const msg = { ...msgTypes[(msgId) % msgTypes.length], id: ++msgId };
+  const pEl = document.getElementById('p'+pIdx);
+  flash(pEl);
+  addLog('lp', `[${producerNames[pIdx]}] Publishing → ${msg.icon} ${msg.label} #${msg.id}`);
+
+  // Animate packet to queue rack
+  movePkt(pEl, document.getElementById('queue-rack'), msg, () => {
+    flash(document.getElementById('queue-rack'));
+    queueMessages.push({ id: msg.id, type: msg });
+    enqCount++;
+    addLog('lq', `[Queue] Enqueued ${msg.icon} ${msg.label} #${msg.id} — depth: ${queueMessages.length}`);
+    renderQueue();
+    tryDispatch();
+  });
+}
+
+/* ══ FIND FREE CONSUMER ══ */
+function freeConsumer() {
+  for (let i = 0; i < CONSUMERS; i++) {
+    if (!consumerBusy[i]) return i;
+  }
+  return -1;
+}
+
+/* ══ DISPATCH FROM QUEUE ══ */
+function tryDispatch() {
+  if (queueMessages.length === 0) return;
+  const cIdx = freeConsumer();
+  if (cIdx === -1) return; // all busy
+
+  const msg = queueMessages.shift();
+  renderQueue();
+
+  const cEl = document.getElementById('c'+cIdx);
+  consumerBusy[cIdx] = true;
+  setBadge(cIdx, 'busy');
+  addLog('lq', `[Queue] Dispatching ${msg.type.icon} ${msg.type.label} #${msg.id} → Consumer ${cIdx}`);
+
+  movePkt(document.getElementById('queue-rack'), cEl, msg.type, () => {
+    flash(cEl);
+    addLog('lc', `[Worker ${cIdx}] Processing ${msg.type.icon} ${msg.type.label} #${msg.id}…`);
+    // Simulate processing time
+    const procTime = d((800 + Math.random()*600));
+    setTimeout(() => {
+      consumerBusy[cIdx] = false;
+      procCount++;
+      tputBucket++;
+      setBadge(cIdx, 'done');
+      addLog('lc', `[Worker ${cIdx}] ✓ Done ${msg.type.icon} ${msg.type.label} #${msg.id}`);
+      updateStats();
+      setTimeout(() => {
+        setBadge(cIdx, 'idle');
+        tryDispatch();
+      }, d(300));
+    }, procTime);
+  });
+}
+
+/* ══ CONSUMER BADGE ══ */
+function setBadge(cIdx, state) {
+  const el = document.getElementById('badge-c'+cIdx);
+  el.className = 'cons-badge badge-' + state;
+  el.textContent = state.toUpperCase();
+}
+
+/* ══ SIMULATE FAILURE (DLQ) ══ */
+function simulateFail() {
+  if (queueMessages.length === 0) {
+    addLog('le-err', '[Queue] No messages to fail — enqueue some first.');
+    return;
+  }
+  const msg = queueMessages.shift();
+  renderQueue();
+  const dlqEl = document.getElementById('dlq');
+  addLog('le-err', `[Queue] ❌ ${msg.type.icon} ${msg.type.label} #${msg.id} → FAILED (max retries exceeded)`);
+  movePkt(document.getElementById('queue-rack'), dlqEl, { ...msg.type, bg:'#1c0505', border:'#991b1b', text:'#fca5a5' }, () => {
+    flash(dlqEl);
+    dlqCount++;
+    addLog('le-err', `[DLQ] Dead-lettered ${msg.type.icon} ${msg.type.label} #${msg.id} — manual review needed`);
+    updateStats();
+  });
+}
+
+/* ══ BURST MODE ══ */
+function burstMode() {
+  addLog('lp', '[Burst] 💥 Simulating traffic spike — flooding queue…');
+  let count = 0;
+  const burst = setInterval(() => {
+    if (count++ >= 6) { clearInterval(burst); return; }
+    enqueue(count % 3);
+  }, d(220));
+}
+
+/* ══ AUTO DEMO ══ */
+function toggleAuto() {
+  const btn = document.getElementById('auto-btn');
+  if (autoTimer) {
+    clearInterval(autoTimer);
+    autoTimer = null;
+    btn.textContent = '▶ Auto Demo';
+    btn.classList.remove('active');
+  } else {
+    btn.textContent = '⏹ Stop Demo';
+    btn.classList.add('active');
+    let tick = 0;
+    autoTimer = setInterval(() => {
+      enqueue(tick % 3);
+      tick++;
+    }, d(1600));
+  }
+}
+
+/* ══ INIT ══ */
+renderQueue();
+addLog('lq', '[System] Message Queue ready — FIFO, 3 workers, DLQ enabled');
+addLog('lq', '[System] Click any producer or button to start sending messages');
+</script>
+</body>
+</html>
