@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>API Gateway — System Design</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: #0d1117;
+  color: #e2e8f0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 22px 16px 30px;
+}
+
+h1 { font-size: 22px; font-weight: 700; color: #f1f5f9; margin-bottom: 3px; }
+.subtitle { font-size: 11px; color: #475569; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 18px; }
+
+/* ═══ STATS BAR ══════════════════════════════ */
+.stats-bar {
+  display: flex; gap: 14px; justify-content: center;
+  margin-bottom: 16px; flex-wrap: wrap;
+}
+.stat-pill {
+  background: #111827; border: 1px solid #1e293b;
+  border-radius: 8px; padding: 5px 14px;
+  font-size: 11px; color: #64748b;
+  display: flex; align-items: center; gap: 6px;
+}
+.stat-pill b { color: #e2e8f0; font-size: 14px; font-weight: 700; }
+
+/* ═══ CANVAS ═════════════════════════════════ */
+.canvas {
+  position: relative;
+  width: 940px;
+  height: 500px;
+}
+
+/* ═══ SECTION LABELS ════════════════════════ */
+.sec-label {
+  position: absolute;
+  font-size: 10px; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: #1e293b; top: 8px; text-align: center;
+}
+.divider {
+  position: absolute; top: 28px; bottom: 16px;
+  width: 1px; background: #1a2332;
+}
+
+/* ═══ CLIENT NODES ══════════════════════════ */
+.client {
+  position: absolute;
+  width: 100px;
+  background: #111827;
+  border: 1.5px solid #1e3a5f;
+  border-radius: 10px;
+  padding: 8px 6px 7px;
+  display: flex; flex-direction: column;
+  align-items: center; gap: 4px;
+  cursor: pointer;
+  transition: filter .2s, transform .15s;
+  z-index: 5;
+  user-select: none;
+}
+.client:hover { transform: translateY(-2px); filter: brightness(1.15); }
+.client-icon { font-size: 22px; }
+.client-name { font-size: 10px; font-weight: 600; color: #94a3b8; text-align: center; line-height: 1.2; }
+.client-badge {
+  font-size: 8px; font-weight: 700; padding: 1px 6px;
+  border-radius: 6px; background: #0f172a; color: #475569;
+  letter-spacing: .04em;
+}
+
+/* ═══ API GATEWAY ═══════════════════════════ */
+#gateway {
+  position: absolute;
+  left: 370px; top: 155px;
+  width: 130px; height: 130px;
+  background: #0a1628;
+  border: 2px solid #0ea5e9;
+  border-radius: 22px;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 4px; z-index: 6;
+  cursor: default;
+  transition: filter .2s;
+}
+.gw-icon { font-size: 28px; }
+.gw-name { font-size: 13px; font-weight: 700; color: #38bdf8; text-align: center; line-height: 1.2; }
+.gw-sub  { font-size: 9px; color: #0369a1; letter-spacing: .05em; }
+
+/* Gateway feature pills */
+.gw-features {
+  position: absolute;
+  left: 366px; top: 295px;
+  display: flex; gap: 4px; flex-wrap: wrap;
+  width: 140px; justify-content: center;
+  z-index: 6;
+}
+.gw-feat {
+  font-size: 8px; font-weight: 700; padding: 2px 6px;
+  border-radius: 5px; border: 1px solid;
+  letter-spacing: .03em; white-space: nowrap;
+}
+
+/* ═══ SERVICE NODES ═════════════════════════ */
+.svc {
+  position: absolute;
+  border-radius: 50%;
+  border: 2px solid;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 3px; z-index: 5;
+  cursor: pointer;
+  transition: filter .2s, transform .15s;
+  user-select: none;
+}
+.svc:hover { transform: scale(1.06); filter: brightness(1.15); }
+.svc-icon { font-size: 20px; }
+.svc-name { font-size: 11px; font-weight: 700; line-height: 1.2; text-align: center; }
+.svc-sub  { font-size: 9px; opacity: .65; text-align: center; }
+.svc-badge {
+  font-size: 8px; font-weight: 700; padding: 1px 6px;
+  border-radius: 6px; margin-top: 1px;
+  letter-spacing: .04em;
+}
+.badge-idle { background: #1e293b; color: #475569; }
+.badge-busy { background: #172554; color: #60a5fa; }
+.badge-ok   { background: #14532d; color: #4ade80; }
+.badge-err  { background: #450a0a; color: #f87171; }
+
+/* ═══ FLASH ══════════════════════════════════ */
+@keyframes flash-anim {
+  0%   { filter: brightness(2) drop-shadow(0 0 10px currentColor); }
+  100% { filter: brightness(1); }
+}
+.flashing { animation: flash-anim .5s ease-out; }
+
+/* ═══ HEALTH RING ════════════════════════════ */
+@keyframes health-spin {
+  to { stroke-dashoffset: -56; }
+}
+
+/* ═══ RIPPLE on gateway ══════════════════════ */
+@keyframes ripple-out {
+  0%   { transform: scale(.85); opacity: .7; }
+  100% { transform: scale(1.6);  opacity: 0; }
+}
+.ripple {
+  position: absolute;
+  left: 370px; top: 155px;
+  width: 130px; height: 130px;
+  border-radius: 22px;
+  border: 2px solid #0ea5e9;
+  pointer-events: none;
+  z-index: 4;
+  opacity: 0;
+}
+.ripple.go { animation: ripple-out .7s ease-out forwards; }
+
+/* ═══ MOVING PACKETS ════════════════════════ */
+.pkt {
+  position: absolute;
+  border-radius: 8px;
+  pointer-events: none;
+  z-index: 30;
+  opacity: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700;
+  border: 1.5px solid rgba(255,255,255,.2);
+  padding: 0 8px;
+  white-space: nowrap;
+  box-shadow: 0 2px 14px rgba(0,0,0,.5);
+}
+
+/* ═══ STATIC SVG LINES ══════════════════════ */
+.bg-svg {
+  position: absolute; top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none; z-index: 2; overflow: visible;
+}
+
+/* ═══ TOOLTIP ════════════════════════════════ */
+.tooltip {
+  position: absolute;
+  background: #1e293b; border: 1px solid #334155;
+  border-radius: 8px; padding: 6px 10px;
+  font-size: 10px; color: #94a3b8;
+  pointer-events: none; z-index: 50;
+  white-space: nowrap; line-height: 1.6;
+  opacity: 0; transition: opacity .2s;
+}
+
+/* ═══ LOG ════════════════════════════════════ */
+.log-wrap {
+  width: 940px; margin: 10px auto 0;
+  background: #0a0d14; border: 1px solid #1e293b;
+  border-radius: 10px; overflow: hidden;
+}
+.log-hdr {
+  padding: 7px 14px; font-size: 10px; font-weight: 700;
+  color: #334155; border-bottom: 1px solid #1e293b;
+  letter-spacing: .07em; text-transform: uppercase;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.log-body {
+  height: 76px; overflow-y: auto;
+  padding: 5px 14px;
+  font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.75;
+}
+@keyframes li { from { opacity:0; transform:translateY(3px); } to { opacity:1; } }
+.le { animation: li .2s ease; }
+.lc { color: #60a5fa; }
+.lg { color: #38bdf8; }
+.ls { color: #34d399; }
+.le-err { color: #f87171; }
+.lw { color: #fbbf24; }
+
+/* ═══ CONTROLS ══════════════════════════════ */
+.controls {
+  display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;
+  margin: 12px 0 0;
+}
+.btn {
+  font-size: 12px; font-weight: 600; padding: 7px 15px;
+  border-radius: 8px; border: 1px solid #1e293b;
+  background: #111827; color: #e2e8f0;
+  cursor: pointer; transition: background .15s;
+}
+.btn:hover { background: #1e293b; }
+.btn.active { background: #172554; border-color: #2563eb; color: #93c5fd; }
+.btn.warn   { border-color: #7f1d1d; color: #fca5a5; }
+.btn.warn:hover { background: #1c0a0a; }
+
+.speed-row {
+  display: flex; align-items: center; gap: 8px; justify-content: center;
+  margin: 8px 0 0; font-size: 11px; color: #475569;
+}
+input[type=range] { width: 80px; accent-color: #0ea5e9; }
+</style>
+</head>
+<body>
+
+<h1>API Gateway</h1>
+<div class="subtitle">System Design — Interactive Animation</div>
+
+<div class="stats-bar">
+  <div class="stat-pill">Total Requests <b id="st-req">0</b></div>
+  <div class="stat-pill">Routed <b id="st-routed">0</b></div>
+  <div class="stat-pill">Rate Limited <b id="st-rl">0</b></div>
+  <div class="stat-pill">Errors <b id="st-err" style="color:#f87171">0</b></div>
+  <div class="stat-pill">Avg Latency <b id="st-lat">0</b> ms</div>
+</div>
+
+<div class="canvas" id="canvas">
+
+  <!-- Section labels -->
+  <div class="sec-label" style="left:10px;width:140px;">Clients</div>
+  <div class="sec-label" style="left:350px;width:170px;">API Gateway</div>
+  <div class="sec-label" style="left:580px;width:340px;">Microservices</div>
+
+  <div class="divider" style="left:338px;"></div>
+  <div class="divider" style="left:572px;"></div>
+
+  <!-- ── CLIENTS ── -->
+  <div class="client" id="cl0" style="left:18px;top:55px;" onclick="sendReq(0)" title="Web Browser">
+    <div class="client-icon">🌐</div>
+    <div class="client-name">Web Browser</div>
+    <div class="client-badge">REST</div>
+  </div>
+  <div class="client" id="cl1" style="left:18px;top:165px;" onclick="sendReq(1)" title="Mobile App">
+    <div class="client-icon">📱</div>
+    <div class="client-name">Mobile App</div>
+    <div class="client-badge">REST</div>
+  </div>
+  <div class="client" id="cl2" style="left:18px;top:275px;" onclick="sendReq(2)" title="Third-party Client">
+    <div class="client-icon">🔌</div>
+    <div class="client-name">3rd Party</div>
+    <div class="client-badge">OAuth</div>
+  </div>
+  <div class="client" id="cl3" style="left:18px;top:385px;" onclick="sendReq(3)" title="Internal Service">
+    <div class="client-icon">⚙️</div>
+    <div class="client-name">Internal Svc</div>
+    <div class="client-badge">gRPC</div>
+  </div>
+
+  <!-- ── API GATEWAY ── -->
+  <div id="gateway">
+    <div class="gw-icon">🔀</div>
+    <div class="gw-name">API<br>Gateway</div>
+    <div class="gw-sub">nginx / Kong</div>
+  </div>
+  <!-- Ripple rings -->
+  <div class="ripple" id="rp1"></div>
+  <div class="ripple" id="rp2" style="animation-delay:.2s"></div>
+
+  <!-- Gateway feature pills -->
+  <div class="gw-features">
+    <div class="gw-feat" style="background:#041318;border-color:#0e7490;color:#67e8f9;">Auth</div>
+    <div class="gw-feat" style="background:#1c0a00;border-color:#b45309;color:#fcd34d;">Rate Limit</div>
+    <div class="gw-feat" style="background:#0d1f0d;border-color:#16a34a;color:#86efac;">Cache</div>
+    <div class="gw-feat" style="background:#1a0c2e;border-color:#7c3aed;color:#c4b5fd;">Load Bal.</div>
+    <div class="gw-feat" style="background:#0f172a;border-color:#475569;color:#94a3b8;">Logging</div>
+  </div>
+
+  <!-- ── SERVICES ── -->
+  <!-- Service A -->
+  <div class="svc" id="sA" style="left:598px;top:30px;width:110px;height:110px;background:#041318;border-color:#06b6d4;color:#67e8f9;" title="Service A — Auth">
+    <div class="svc-icon">🔐</div>
+    <div class="svc-name">Service A</div>
+    <div class="svc-sub">Auth / IAM</div>
+    <div class="svc-badge badge-idle" id="badge-sA">IDLE</div>
+  </div>
+  <!-- Service B -->
+  <div class="svc" id="sB" style="left:598px;top:175px;width:110px;height:110px;background:#0d1f0d;border-color:#22c55e;color:#86efac;" title="Service B — Orders">
+    <div class="svc-icon">🛒</div>
+    <div class="svc-name">Service B</div>
+    <div class="svc-sub">Orders</div>
+    <div class="svc-badge badge-idle" id="badge-sB">IDLE</div>
+  </div>
+  <!-- Service C -->
+  <div class="svc" id="sC" style="left:598px;top:325px;width:110px;height:110px;background:#1c1004;border-color:#f59e0b;color:#fcd34d;" title="Service C — Payments">
+    <div class="svc-icon">💳</div>
+    <div class="svc-name">Service C</div>
+    <div class="svc-sub">Payments</div>
+    <div class="svc-badge badge-idle" id="badge-sC">IDLE</div>
+  </div>
+  <!-- Service D -->
+  <div class="svc" id="sD" style="left:780px;top:260px;width:110px;height:110px;background:#1c0505;border-color:#f87171;color:#fca5a5;" title="Service D — Notifications">
+    <div class="svc-icon">🔔</div>
+    <div class="svc-name">Service D</div>
+    <div class="svc-sub">Notifications</div>
+    <div class="svc-badge badge-idle" id="badge-sD">IDLE</div>
+  </div>
+  <!-- Service E -->
+  <div class="svc" id="sE" style="left:780px;top:80px;width:110px;height:110px;background:#1a0c2e;border-color:#a855f7;color:#d8b4fe;" title="Service E — User Profile">
+    <div class="svc-icon">👤</div>
+    <div class="svc-name">Service E</div>
+    <div class="svc-sub">User Profile</div>
+    <div class="svc-badge badge-idle" id="badge-sE">IDLE</div>
+  </div>
+
+  <!-- Static SVG background lines -->
+  <svg class="bg-svg" viewBox="0 0 940 500">
+    <defs>
+      <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+        <path d="M2 1L8 5L2 9" fill="none" stroke="#1e3a5f" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </marker>
+      <marker id="ah-svc" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+        <path d="M2 1L8 5L2 9" fill="none" stroke="#1e3a5f" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </marker>
+    </defs>
+    <!-- Clients → Gateway -->
+    <line x1="118" y1="100" x2="368" y2="195" stroke="#1e3a5f" stroke-width="1.1" stroke-dasharray="5 4" marker-end="url(#ah)"/>
+    <line x1="118" y1="210" x2="368" y2="215" stroke="#1e3a5f" stroke-width="1.1" stroke-dasharray="5 4" marker-end="url(#ah)"/>
+    <line x1="118" y1="320" x2="368" y2="235" stroke="#1e3a5f" stroke-width="1.1" stroke-dasharray="5 4" marker-end="url(#ah)"/>
+    <line x1="118" y1="428" x2="368" y2="255" stroke="#1e3a5f" stroke-width="1.1" stroke-dasharray="5 4" marker-end="url(#ah)"/>
+
+    <!-- Gateway → Services -->
+    <line x1="500" y1="195" x2="597" y2="95"  stroke="#1e3a5f" stroke-width="1.1" stroke-dasharray="5 4" marker-end="url(#ah-svc)"/>
+    <line x1="500" y1="220" x2="597" y2="230" stroke="#1e3a5f" stroke-width="1.1" stroke-dasharray="5 4" marker-end="url(#ah-svc)"/>
+    <line x1="500" y1="245" x2="597" y2="375" stroke="#1e3a5f" stroke-width="1.1" stroke-dasharray="5 4" marker-end="url(#ah-svc)"/>
+
+    <!-- Service-to-service (dashed dotted) -->
+    <line x1="708" y1="230" x2="780" y2="195" stroke="#1e293b" stroke-width="1" stroke-dasharray="3 5" marker-end="url(#ah-svc)" opacity=".7"/>
+    <line x1="708" y1="110" x2="780" y2="135" stroke="#1e293b" stroke-width="1" stroke-dasharray="3 5" marker-end="url(#ah-svc)" opacity=".7"/>
+    <line x1="708" y1="380" x2="780" y2="305" stroke="#1e293b" stroke-width="1" stroke-dasharray="3 5" marker-end="url(#ah-svc)" opacity=".7"/>
+    <line x1="890" y1="220" x2="890" y2="180" stroke="#1e293b" stroke-width="1" stroke-dasharray="3 5" marker-end="url(#ah-svc)" opacity=".5"/>
+  </svg>
+
+  <!-- Packet layer -->
+  <div id="pkts" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:30;"></div>
+
+  <!-- Tooltip -->
+  <div class="tooltip" id="tooltip"></div>
+</div>
+
+<!-- LOG -->
+<div class="log-wrap">
+  <div class="log-hdr">
+    <span>Gateway Request Log</span>
+    <span style="color:#1e293b">Auth → Rate Limit → Route → Load Balance → Respond</span>
+  </div>
+  <div class="log-body" id="log"></div>
+</div>
+
+<!-- CONTROLS -->
+<div class="controls">
+  <button class="btn" onclick="sendReq(0)">🌐 Web Request</button>
+  <button class="btn" onclick="sendReq(1)">📱 Mobile Request</button>
+  <button class="btn" onclick="sendReq(2)">🔌 3rd Party Request</button>
+  <button class="btn" onclick="sendReq(3)">⚙️ Internal Request</button>
+  <button class="btn warn" onclick="simRateLimit()">🚫 Rate Limit Hit</button>
+  <button class="btn warn" onclick="simError()">💥 Service Error</button>
+  <button class="btn" onclick="simS2S()">🔗 Service-to-Service</button>
+  <button class="btn" id="auto-btn" onclick="toggleAuto()">▶ Auto Demo</button>
+</div>
+<div class="speed-row">
+  Speed <input type="range" min="0.3" max="3" step="0.1" value="1" oninput="spd=parseFloat(this.value)">
+</div>
+
+<script>
+let spd = 1, autoTimer = null;
+let totalReq = 0, routed = 0, rateLimited = 0, errors = 0;
+let latencies = [];
+
+const clientNames = ['Web Browser','Mobile App','3rd Party','Internal Svc'];
+const clientColors = ['#1d4ed8','#0891b2','#7c3aed','#047857'];
+const clientBgs    = ['#0c1a2e','#041318','#1a0c2e','#041309'];
+const clientBorder = ['#2563eb','#06b6d4','#a855f7','#10b981'];
+
+// Route maps: which services get called per client
+const routeMap = [
+  [{id:'sE',name:'Service E',icon:'👤',delay:600},{id:'sB',name:'Service B',icon:'🛒',delay:400}],  // web → E,B
+  [{id:'sA',name:'Service A',icon:'🔐',delay:300},{id:'sB',name:'Service B',icon:'🛒',delay:500}],  // mobile → A,B
+  [{id:'sA',name:'Service A',icon:'🔐',delay:350},{id:'sC',name:'Service C',icon:'💳',delay:550}],  // 3rd party → A,C
+  [{id:'sB',name:'Service B',icon:'🛒',delay:250},{id:'sD',name:'Service D',icon:'🔔',delay:450}],  // internal → B,D
+];
+
+function d(ms) { return ms / spd; }
+
+function center(el) {
+  const cr = document.getElementById('canvas').getBoundingClientRect();
+  const er = el.getBoundingClientRect();
+  return { x: er.left - cr.left + er.width/2, y: er.top - cr.top + er.height/2 };
+}
+
+/* Packet travel */
+function movePkt(fromEl, toEl, opts, onDone) {
+  const f = center(fromEl), t = center(toEl);
+  const w = opts.w||72, h = opts.h||24;
+  const pkt = document.createElement('div');
+  pkt.className = 'pkt';
+  pkt.style.cssText = `width:${w}px;height:${h}px;background:${opts.bg};border-color:${opts.border};
+    color:${opts.color};left:${f.x-w/2}px;top:${f.y-h/2}px;opacity:1;`;
+  pkt.innerHTML = opts.label;
+  document.getElementById('pkts').appendChild(pkt);
+  const dist = Math.hypot(t.x-f.x, t.y-f.y);
+  const dur  = Math.max(220, dist/(190*spd)*1000);
+  pkt.animate([
+    { left:(f.x-w/2)+'px', top:(f.y-h/2)+'px', opacity:1 },
+    { left:(t.x-w/2)+'px', top:(t.y-h/2)+'px', opacity:1 }
+  ], { duration:dur, easing:'cubic-bezier(.4,0,.2,1)', fill:'forwards' })
+  .finished.then(() => { pkt.remove(); if (onDone) onDone(); });
+}
+
+/* Return packet (response) */
+function movePktReturn(fromEl, toEl, onDone) {
+  movePkt(fromEl, toEl, {
+    bg:'#0d1f0d', border:'#16a34a', color:'#86efac',
+    label:'✓ 200 OK', w:72, h:22
+  }, onDone);
+}
+
+function flash(el) {
+  el.classList.remove('flashing');
+  void el.offsetWidth;
+  el.classList.add('flashing');
+  setTimeout(() => el.classList.remove('flashing'), 550);
+}
+
+function ripple() {
+  ['rp1','rp2'].forEach((id,i) => {
+    const el = document.getElementById(id);
+    el.classList.remove('go');
+    void el.offsetWidth;
+    setTimeout(() => el.classList.add('go'), i*180);
+  });
+}
+
+function setBadge(id, state) {
+  const el = document.getElementById('badge-'+id);
+  if (!el) return;
+  el.className = 'svc-badge badge-' + state;
+  el.textContent = state.toUpperCase();
+}
+
+function addLog(cls, msg) {
+  const ts = new Date().toLocaleTimeString('en-GB',{hour12:false});
+  const el = document.createElement('div');
+  el.className = 'le';
+  el.innerHTML = `<span style="color:#1e293b">${ts}</span> <span class="${cls}">${msg}</span>`;
+  const lb = document.getElementById('log');
+  lb.appendChild(el);
+  lb.scrollTop = lb.scrollHeight;
+  if (lb.children.length > 60) lb.removeChild(lb.firstChild);
+}
+
+function updateStats() {
+  document.getElementById('st-req').textContent    = totalReq;
+  document.getElementById('st-routed').textContent = routed;
+  document.getElementById('st-rl').textContent     = rateLimited;
+  document.getElementById('st-err').textContent    = errors;
+  const avg = latencies.length ? Math.round(latencies.reduce((a,b)=>a+b,0)/latencies.length) : 0;
+  document.getElementById('st-lat').textContent = avg;
+}
+
+/* ══ MAIN REQUEST FLOW ══ */
+function sendReq(cIdx) {
+  totalReq++;
+  const start = Date.now();
+  const clEl  = document.getElementById('cl'+cIdx);
+  const gw    = document.getElementById('gateway');
+  const opts  = {
+    bg: clientBgs[cIdx], border: clientBorder[cIdx], color: '#e2e8f0',
+    label: `${['🌐','📱','🔌','⚙️'][cIdx]} ${clientNames[cIdx]}`, w:110, h:24
+  };
+
+  flash(clEl);
+  addLog('lc', `[${clientNames[cIdx]}] → Request #${totalReq} sent`);
+
+  /* Step 1: Client → Gateway */
+  movePkt(clEl, gw, opts, () => {
+    flash(gw); ripple();
+    addLog('lg', `[Gateway] ✦ Authenticating request…`);
+    setTimeout(() => {
+      addLog('lg', `[Gateway] ✦ Rate limiting check — OK`);
+      addLog('lg', `[Gateway] ✦ Routing to ${routeMap[cIdx].length} service(s)…`);
+
+      /* Step 2: Gateway → Services (fanned out) */
+      const routes = routeMap[cIdx];
+      routes.forEach((svc, i) => {
+        setTimeout(() => {
+          const sEl = document.getElementById(svc.id);
+          setBadge(svc.id, 'busy');
+          movePkt(gw, sEl, {
+            bg:'#0a1628', border:'#0ea5e9', color:'#7dd3fc',
+            label:`${svc.icon} route`, w:80, h:22
+          }, () => {
+            flash(sEl);
+            addLog('ls', `[${svc.name}] Processing…`);
+            const svcDelay = d(svc.delay + Math.random()*200);
+            setTimeout(() => {
+              setBadge(svc.id, 'ok');
+              addLog('ls', `[${svc.name}] ✓ Responded`);
+              /* Step 3: Service → Gateway (response) */
+              movePktReturn(sEl, gw, () => {
+                if (i === routes.length - 1) {
+                  /* Step 4: Gateway → Client (aggregated response) */
+                  setTimeout(() => {
+                    movePktReturn(gw, clEl, () => {
+                      routed++;
+                      const lat = Date.now() - start;
+                      latencies.push(lat);
+                      if (latencies.length > 20) latencies.shift();
+                      addLog('lc', `[${clientNames[cIdx]}] ← 200 OK (${lat}ms)`);
+                      updateStats();
+                    });
+                  }, d(120));
+                }
+                setTimeout(() => setBadge(svc.id, 'idle'), d(400));
+              });
+            }, svcDelay);
+          });
+        }, d(i * 180));
+      });
+    }, d(280));
+  });
+  updateStats();
+}
+
+/* ══ RATE LIMIT SIMULATION ══ */
+function simRateLimit() {
+  totalReq++; rateLimited++;
+  const cIdx = Math.floor(Math.random()*4);
+  const clEl = document.getElementById('cl'+cIdx);
+  const gw   = document.getElementById('gateway');
+  flash(clEl);
+  addLog('lc', `[${clientNames[cIdx]}] → Request #${totalReq} sent`);
+  movePkt(clEl, gw, {
+    bg:'#1c0505', border:'#991b1b', color:'#fca5a5',
+    label:`🚫 rate limit`, w:96, h:24
+  }, () => {
+    flash(gw);
+    addLog('le-err', `[Gateway] 🚫 Rate limit exceeded — 429 Too Many Requests`);
+    /* Bounce back */
+    setTimeout(() => {
+      movePkt(gw, clEl, {
+        bg:'#1c0505', border:'#991b1b', color:'#fca5a5',
+        label:`✗ 429`, w:56, h:22
+      }, () => {
+        addLog('lc', `[${clientNames[cIdx]}] ← 429 Too Many Requests`);
+        updateStats();
+      });
+    }, d(200));
+  });
+  updateStats();
+}
+
+/* ══ SERVICE ERROR SIMULATION ══ */
+function simError() {
+  totalReq++; errors++;
+  const cIdx = Math.floor(Math.random()*4);
+  const svcList = ['sA','sB','sC','sD','sE'];
+  const badSvc  = svcList[Math.floor(Math.random()*svcList.length)];
+  const clEl    = document.getElementById('cl'+cIdx);
+  const gw      = document.getElementById('gateway');
+  const sEl     = document.getElementById(badSvc);
+  flash(clEl);
+  addLog('lc', `[${clientNames[cIdx]}] → Request #${totalReq} sent`);
+  movePkt(clEl, gw, {
+    bg: clientBgs[cIdx], border: clientBorder[cIdx], color:'#e2e8f0',
+    label:`${clientNames[cIdx]}`, w:110, h:24
+  }, () => {
+    flash(gw);
+    setTimeout(() => {
+      setBadge(badSvc, 'err');
+      movePkt(gw, sEl, {
+        bg:'#0a1628', border:'#0ea5e9', color:'#7dd3fc',
+        label:`route`, w:60, h:22
+      }, () => {
+        flash(sEl);
+        addLog('le-err', `[${badSvc.replace('s','Service ')}] ✗ 500 Internal Error`);
+        setTimeout(() => {
+          movePkt(sEl, gw, {
+            bg:'#1c0505', border:'#991b1b', color:'#fca5a5',
+            label:`✗ 500`, w:56, h:22
+          }, () => {
+            movePkt(gw, clEl, {
+              bg:'#1c0505', border:'#991b1b', color:'#fca5a5',
+              label:`✗ 502 Bad Gateway`, w:120, h:22
+            }, () => {
+              addLog('lc', `[${clientNames[cIdx]}] ← 502 Bad Gateway`);
+              setBadge(badSvc, 'idle');
+              updateStats();
+            });
+          });
+        }, d(150));
+      });
+    }, d(250));
+  });
+  updateStats();
+}
+
+/* ══ SERVICE-TO-SERVICE ══ */
+function simS2S() {
+  const pairs = [['sB','sD'],['sA','sE'],['sC','sD'],['sB','sE']];
+  const [from, to] = pairs[Math.floor(Math.random()*pairs.length)];
+  const fEl = document.getElementById(from);
+  const tEl = document.getElementById(to);
+  setBadge(from, 'busy');
+  addLog('lw', `[Service Mesh] ${from.replace('s','Service ')} → ${to.replace('s','Service ')} (internal call)`);
+  movePkt(fEl, tEl, {
+    bg:'#1a1040', border:'#6d28d9', color:'#c4b5fd',
+    label:`🔗 internal`, w:88, h:22
+  }, () => {
+    flash(tEl); setBadge(to, 'busy');
+    addLog('ls', `[${to.replace('s','Service ')}] ✓ Replied to ${from.replace('s','Service ')}`);
+    setTimeout(() => {
+      movePktReturn(tEl, fEl, () => {
+        setBadge(from, 'idle'); setBadge(to, 'idle');
+      });
+    }, d(300));
+  });
+}
+
+/* ══ AUTO DEMO ══ */
+function toggleAuto() {
+  const btn = document.getElementById('auto-btn');
+  if (autoTimer) {
+    clearInterval(autoTimer);
+    autoTimer = null;
+    btn.textContent = '▶ Auto Demo';
+    btn.classList.remove('active');
+  } else {
+    btn.textContent = '⏹ Stop Demo';
+    btn.classList.add('active');
+    let tick = 0;
+    autoTimer = setInterval(() => {
+      const r = Math.random();
+      if      (r < 0.65) sendReq(tick % 4);
+      else if (r < 0.80) simRateLimit();
+      else if (r < 0.90) simError();
+      else               simS2S();
+      tick++;
+    }, d(1800));
+  }
+}
+
+/* ══ INIT ══ */
+addLog('lg', '[Gateway] API Gateway online — Auth ✓ Rate Limiting ✓ Load Balancer ✓');
+addLog('lg', '[Gateway] Listening on :443 — click any client or button to send requests');
+</script>
+</body>
+</html>
