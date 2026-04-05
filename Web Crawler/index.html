@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Web Crawler — System Design</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: #0d1117;
+  color: #e2e8f0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 16px 30px;
+}
+
+h1 { font-size: 22px; font-weight: 700; color: #f1f5f9; margin-bottom: 3px; }
+.subtitle { font-size: 11px; color: #475569; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 16px; }
+
+/* ═══ STATS ══════════════════════════════════ */
+.stats-bar {
+  display: flex; gap: 12px; justify-content: center;
+  margin-bottom: 14px; flex-wrap: wrap;
+}
+.stat-pill {
+  background: #111827; border: 1px solid #1e293b;
+  border-radius: 8px; padding: 5px 14px;
+  font-size: 11px; color: #64748b;
+  display: flex; align-items: center; gap: 6px;
+}
+.stat-pill b { color: #e2e8f0; font-size: 14px; font-weight: 700; }
+
+/* ═══ MAIN LAYOUT ════════════════════════════ */
+.layout {
+  display: flex;
+  gap: 14px;
+  width: 1100px;
+  align-items: flex-start;
+}
+
+/* ═══ INTERNET PANEL (left) ═════════════════ */
+.internet-panel {
+  width: 210px;
+  flex-shrink: 0;
+}
+.panel-title {
+  font-size: 10px; font-weight: 700; letter-spacing: .1em;
+  text-transform: uppercase; color: #334155;
+  margin-bottom: 8px; text-align: center;
+}
+
+.web-page {
+  background: #111827;
+  border: 1.5px solid #1e293b;
+  border-radius: 10px;
+  margin-bottom: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color .2s, filter .2s;
+  position: relative;
+}
+.web-page:hover { border-color: #334155; filter: brightness(1.1); }
+.web-page.crawling { border-color: #2563eb; box-shadow: 0 0 12px rgba(37,99,235,.3); }
+.web-page.crawled  { border-color: #16a34a; }
+.web-page.queued   { border-color: #d97706; }
+
+.page-bar {
+  background: #1e293b;
+  padding: 5px 8px;
+  display: flex; align-items: center; gap: 5px;
+}
+.page-dots { display: flex; gap: 3px; }
+.page-dot  { width: 6px; height: 6px; border-radius: 50%; }
+.page-url  { font-size: 9px; color: #475569; font-family: monospace; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.page-body { padding: 7px 8px; }
+.page-line { height: 5px; border-radius: 3px; background: #1e293b; margin-bottom: 4px; }
+.page-link { height: 5px; border-radius: 3px; background: #172554; margin-bottom: 4px; cursor: pointer; }
+.page-status {
+  position: absolute; top: 5px; right: 6px;
+  font-size: 8px; font-weight: 700; padding: 1px 5px;
+  border-radius: 5px; letter-spacing: .04em;
+}
+
+/* ═══ CRAWLER ENGINE (center) ═══════════════ */
+.engine-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* URL Frontier / Queue */
+.frontier-box {
+  background: #111827;
+  border: 1.5px solid #1e3a5f;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.box-hdr {
+  background: #0f2137;
+  padding: 7px 12px;
+  font-size: 10px; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.frontier-slots {
+  padding: 8px 10px;
+  display: flex; flex-direction: column; gap: 4px;
+  min-height: 70px;
+}
+.frontier-item {
+  background: #0c1a2e;
+  border: 1px solid #1e3a5f;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 10px; font-family: monospace;
+  color: #60a5fa;
+  display: flex; align-items: center; gap: 6px;
+  animation: slide-down .3s ease;
+}
+@keyframes slide-down { from { opacity:0; transform:translateY(-6px); } to { opacity:1; } }
+.frontier-item .fi-icon { font-size: 12px; }
+.frontier-item .fi-pri  { font-size: 8px; background:#172554; color:#93c5fd; padding:1px 5px; border-radius:4px; margin-left:auto; }
+.frontier-empty { font-size: 10px; color: #1e3a5f; text-align: center; padding: 10px; }
+
+/* Crawler Workers */
+.workers-row {
+  display: flex; gap: 8px;
+}
+.worker-box {
+  flex: 1;
+  background: #111827;
+  border: 1.5px solid #1e293b;
+  border-radius: 10px;
+  padding: 8px;
+  text-align: center;
+  transition: border-color .2s;
+}
+.worker-box.active { border-color: #2563eb; box-shadow: 0 0 10px rgba(37,99,235,.25); }
+.worker-box.done   { border-color: #16a34a; }
+.worker-icon { font-size: 20px; margin-bottom: 3px; }
+.worker-name { font-size: 10px; font-weight: 700; color: #94a3b8; }
+.worker-task { font-size: 9px; color: #475569; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.worker-badge {
+  display: inline-block; margin-top: 4px;
+  font-size: 8px; font-weight: 700; padding: 1px 6px;
+  border-radius: 5px; letter-spacing: .04em;
+}
+.wb-idle { background: #1e293b; color: #475569; }
+.wb-fetch{ background: #172554; color: #60a5fa; }
+.wb-parse{ background: #1c1004; color: #fcd34d; }
+.wb-done { background: #14532d; color: #4ade80; }
+
+/* Processing pipeline */
+.pipeline {
+  display: flex; gap: 6px; align-items: center;
+}
+.pipe-step {
+  flex: 1;
+  background: #111827;
+  border: 1.5px solid #1e293b;
+  border-radius: 10px;
+  padding: 8px 6px;
+  text-align: center;
+  transition: border-color .3s, background .3s;
+}
+.pipe-step.lit { border-color: #7c3aed; background: #1a0c2e; }
+.pipe-icon { font-size: 18px; }
+.pipe-name { font-size: 10px; font-weight: 700; color: #94a3b8; margin-top: 3px; }
+.pipe-sub  { font-size: 8px; color: #475569; margin-top: 1px; }
+.pipe-arrow { color: #1e293b; font-size: 14px; flex-shrink: 0; }
+
+/* ═══ STORAGE PANEL (right) ═════════════════ */
+.storage-panel {
+  width: 200px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.store-box {
+  background: #111827;
+  border: 1.5px solid #1e293b;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.store-hdr {
+  background: #0d1a0d;
+  padding: 6px 10px;
+  font-size: 10px; font-weight: 700;
+  color: #4ade80; letter-spacing: .05em;
+  text-transform: uppercase;
+  display: flex; align-items: center; gap: 5px;
+}
+.store-hdr.blue-hdr  { background: #0f1f38; color: #60a5fa; }
+.store-hdr.amber-hdr { background: #1c1004; color: #fcd34d; }
+.store-hdr.purple-hdr{ background: #1a0c2e; color: #c4b5fd; }
+
+.store-items {
+  padding: 6px 8px;
+  max-height: 130px;
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.store-row {
+  font-size: 9px; font-family: monospace;
+  color: #475569; padding: 2px 4px;
+  border-left: 2px solid #1e293b;
+  animation: fade-in .3s ease;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+@keyframes fade-in { from { opacity:0; } to { opacity:1; } }
+.store-row.new { color: #94a3b8; border-left-color: #4ade80; }
+
+/* Robots.txt / Politeness panel */
+.politeness-box {
+  background: #111827;
+  border: 1.5px solid #1e293b;
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+.pol-row {
+  display: flex; justify-content: space-between;
+  font-size: 9px; margin-bottom: 4px;
+  color: #475569;
+}
+.pol-bar { height: 3px; border-radius: 2px; background: #1e293b; margin-bottom: 6px; overflow: hidden; }
+.pol-fill{ height: 100%; border-radius: 2px; transition: width .5s ease; }
+
+/* ═══ MOVING PACKETS ════════════════════════ */
+.pkt {
+  position: fixed;
+  pointer-events: none;
+  z-index: 100;
+  border-radius: 8px;
+  font-size: 10px; font-weight: 700;
+  display: flex; align-items: center; gap: 4px;
+  padding: 3px 8px;
+  white-space: nowrap;
+  border: 1.5px solid rgba(255,255,255,.2);
+  box-shadow: 0 2px 12px rgba(0,0,0,.5);
+}
+
+/* ═══ FLASH ══════════════════════════════════ */
+@keyframes flash-glow {
+  0%   { box-shadow: 0 0 0 0 rgba(37,99,235,.8); }
+  70%  { box-shadow: 0 0 0 10px rgba(37,99,235,0); }
+  100% { box-shadow: 0 0 0 0 rgba(37,99,235,0); }
+}
+.flashing { animation: flash-glow .5s ease-out; }
+
+/* ═══ LOG ════════════════════════════════════ */
+.log-wrap {
+  width: 1100px; margin: 12px auto 0;
+  background: #0a0d14; border: 1px solid #1e293b;
+  border-radius: 10px; overflow: hidden;
+}
+.log-hdr {
+  padding: 7px 14px; font-size: 10px; font-weight: 700;
+  color: #334155; border-bottom: 1px solid #1e293b;
+  letter-spacing: .07em; text-transform: uppercase;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.log-body {
+  height: 72px; overflow-y: auto;
+  padding: 5px 14px;
+  font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.7;
+}
+.le { animation: li .2s ease; }
+@keyframes li { from { opacity:0; transform:translateY(3px); } to { opacity:1; } }
+.lf { color: #60a5fa; }
+.lw { color: #fbbf24; }
+.lp { color: #a78bfa; }
+.ls { color: #34d399; }
+.le-r{ color: #f87171; }
+
+/* ═══ CONTROLS ══════════════════════════════ */
+.controls {
+  display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;
+  margin: 12px 0 0;
+}
+.btn {
+  font-size: 12px; font-weight: 600; padding: 7px 15px;
+  border-radius: 8px; border: 1px solid #1e293b;
+  background: #111827; color: #e2e8f0;
+  cursor: pointer; transition: background .15s;
+}
+.btn:hover  { background: #1e293b; }
+.btn.active { background: #172554; border-color: #2563eb; color: #93c5fd; }
+
+.speed-row {
+  display: flex; align-items: center; gap: 8px; justify-content: center;
+  margin: 8px 0 0; font-size: 11px; color: #475569;
+}
+input[type=range] { width: 80px; accent-color: #2563eb; }
+</style>
+</head>
+<body>
+
+<h1>Web Crawler</h1>
+<div class="subtitle">System Design — Interactive Animation</div>
+
+<div class="stats-bar">
+  <div class="stat-pill">Seed URLs <b id="st-seed">0</b></div>
+  <div class="stat-pill">Crawled <b id="st-crawled">0</b></div>
+  <div class="stat-pill">Links Found <b id="st-links">0</b></div>
+  <div class="stat-pill">In Queue <b id="st-queue">0</b></div>
+  <div class="stat-pill">Indexed <b id="st-indexed">0</b></div>
+  <div class="stat-pill">Blocked (robots) <b id="st-blocked" style="color:#f87171">0</b></div>
+</div>
+
+<div class="layout">
+
+  <!-- ══ LEFT: INTERNET ══ -->
+  <div class="internet-panel">
+    <div class="panel-title">🌐 Internet</div>
+
+    <div class="web-page" id="pg-0" onclick="seedURL(0)">
+      <div class="page-bar">
+        <div class="page-dots">
+          <div class="page-dot" style="background:#f87171"></div>
+          <div class="page-dot" style="background:#fbbf24"></div>
+          <div class="page-dot" style="background:#4ade80"></div>
+        </div>
+        <div class="page-url">https://example.com</div>
+      </div>
+      <div class="page-body">
+        <div class="page-line" style="width:80%"></div>
+        <div class="page-line" style="width:60%"></div>
+        <div class="page-link" style="width:70%"></div>
+        <div class="page-link" style="width:50%"></div>
+      </div>
+    </div>
+
+    <div class="web-page" id="pg-1" onclick="seedURL(1)">
+      <div class="page-bar">
+        <div class="page-dots">
+          <div class="page-dot" style="background:#f87171"></div>
+          <div class="page-dot" style="background:#fbbf24"></div>
+          <div class="page-dot" style="background:#4ade80"></div>
+        </div>
+        <div class="page-url">https://news.ycombinator.com</div>
+      </div>
+      <div class="page-body">
+        <div class="page-line" style="width:90%"></div>
+        <div class="page-link" style="width:75%"></div>
+        <div class="page-link" style="width:65%"></div>
+        <div class="page-line" style="width:55%"></div>
+      </div>
+    </div>
+
+    <div class="web-page" id="pg-2" onclick="seedURL(2)">
+      <div class="page-bar">
+        <div class="page-dots">
+          <div class="page-dot" style="background:#f87171"></div>
+          <div class="page-dot" style="background:#fbbf24"></div>
+          <div class="page-dot" style="background:#4ade80"></div>
+        </div>
+        <div class="page-url">https://github.com</div>
+      </div>
+      <div class="page-body">
+        <div class="page-line" style="width:70%"></div>
+        <div class="page-line" style="width:85%"></div>
+        <div class="page-link" style="width:60%"></div>
+        <div class="page-link" style="width:80%"></div>
+      </div>
+    </div>
+
+    <div class="web-page" id="pg-3" onclick="seedURL(3)">
+      <div class="page-bar">
+        <div class="page-dots">
+          <div class="page-dot" style="background:#f87171"></div>
+          <div class="page-dot" style="background:#fbbf24"></div>
+          <div class="page-dot" style="background:#4ade80"></div>
+        </div>
+        <div class="page-url">https://wikipedia.org</div>
+      </div>
+      <div class="page-body">
+        <div class="page-line" style="width:95%"></div>
+        <div class="page-link" style="width:55%"></div>
+        <div class="page-link" style="width:70%"></div>
+        <div class="page-link" style="width:45%"></div>
+      </div>
+    </div>
+
+    <div class="web-page" id="pg-4" onclick="seedURL(4)" style="border-color:#7f1d1d;">
+      <div class="page-bar" style="background:#1c0505;">
+        <div class="page-dots">
+          <div class="page-dot" style="background:#f87171"></div>
+          <div class="page-dot" style="background:#fbbf24"></div>
+          <div class="page-dot" style="background:#4ade80"></div>
+        </div>
+        <div class="page-url" style="color:#7f1d1d;">https://blocked.site/private</div>
+      </div>
+      <div class="page-body">
+        <div style="font-size:9px;color:#7f1d1d;text-align:center;padding:4px;">🚫 robots.txt: Disallow</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ CENTER: CRAWLER ENGINE ══ -->
+  <div class="engine-panel">
+
+    <!-- URL Frontier -->
+    <div class="frontier-box">
+      <div class="box-hdr" style="color:#60a5fa;">
+        <span>📋 URL Frontier (Priority Queue)</span>
+        <span id="frontier-count" style="background:#172554;color:#93c5fd;font-size:9px;padding:1px 7px;border-radius:5px;">0 URLs</span>
+      </div>
+      <div class="frontier-slots" id="frontier-slots">
+        <div class="frontier-empty" id="frontier-empty">Add seed URLs to begin crawling</div>
+      </div>
+    </div>
+
+    <!-- Crawler Workers -->
+    <div>
+      <div class="panel-title" style="text-align:left;margin-bottom:6px;">🤖 Crawler Workers</div>
+      <div class="workers-row">
+        <div class="worker-box" id="w0">
+          <div class="worker-icon">🕷️</div>
+          <div class="worker-name">Worker 1</div>
+          <div class="worker-task" id="wt0">—</div>
+          <div class="worker-badge wb-idle" id="wb0">IDLE</div>
+        </div>
+        <div class="worker-box" id="w1">
+          <div class="worker-icon">🕷️</div>
+          <div class="worker-name">Worker 2</div>
+          <div class="worker-task" id="wt1">—</div>
+          <div class="worker-badge wb-idle" id="wb1">IDLE</div>
+        </div>
+        <div class="worker-box" id="w2">
+          <div class="worker-icon">🕷️</div>
+          <div class="worker-name">Worker 3</div>
+          <div class="worker-task" id="wt2">—</div>
+          <div class="worker-badge wb-idle" id="wb2">IDLE</div>
+        </div>
+        <div class="worker-box" id="w3">
+          <div class="worker-icon">🕷️</div>
+          <div class="worker-name">Worker 4</div>
+          <div class="worker-task" id="wt3">—</div>
+          <div class="worker-badge wb-idle" id="wb3">IDLE</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Processing Pipeline -->
+    <div>
+      <div class="panel-title" style="text-align:left;margin-bottom:6px;">⚙️ Processing Pipeline</div>
+      <div class="pipeline">
+        <div class="pipe-step" id="pipe-0">
+          <div class="pipe-icon">🔍</div>
+          <div class="pipe-name">DNS Resolve</div>
+          <div class="pipe-sub">IP lookup</div>
+        </div>
+        <div class="pipe-arrow">›</div>
+        <div class="pipe-step" id="pipe-1">
+          <div class="pipe-icon">🤝</div>
+          <div class="pipe-name">Fetch</div>
+          <div class="pipe-sub">HTTP GET</div>
+        </div>
+        <div class="pipe-arrow">›</div>
+        <div class="pipe-step" id="pipe-2">
+          <div class="pipe-icon">📄</div>
+          <div class="pipe-name">Parse HTML</div>
+          <div class="pipe-sub">DOM / links</div>
+        </div>
+        <div class="pipe-arrow">›</div>
+        <div class="pipe-step" id="pipe-3">
+          <div class="pipe-icon">🔗</div>
+          <div class="pipe-name">Extract URLs</div>
+          <div class="pipe-sub">href, src</div>
+        </div>
+        <div class="pipe-arrow">›</div>
+        <div class="pipe-step" id="pipe-4">
+          <div class="pipe-icon">🧹</div>
+          <div class="pipe-name">Deduplicate</div>
+          <div class="pipe-sub">URL hash</div>
+        </div>
+        <div class="pipe-arrow">›</div>
+        <div class="pipe-step" id="pipe-5">
+          <div class="pipe-icon">📦</div>
+          <div class="pipe-name">Store & Index</div>
+          <div class="pipe-sub">content DB</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Politeness / Rate Control -->
+    <div class="politeness-box">
+      <div class="panel-title" style="text-align:left;margin-bottom:8px;">🤝 Politeness Policy (robots.txt + rate limiting)</div>
+      <div id="pol-rows"></div>
+    </div>
+  </div>
+
+  <!-- ══ RIGHT: STORAGE ══ -->
+  <div class="storage-panel">
+
+    <div class="store-box">
+      <div class="store-hdr blue-hdr">
+        <span>📚</span> URL Index
+      </div>
+      <div class="store-items" id="url-index"></div>
+    </div>
+
+    <div class="store-box">
+      <div class="store-hdr">
+        <span>📄</span> Content Store
+      </div>
+      <div class="store-items" id="content-store"></div>
+    </div>
+
+    <div class="store-box">
+      <div class="store-hdr amber-hdr">
+        <span>🔗</span> Link Graph
+      </div>
+      <div class="store-items" id="link-graph"></div>
+    </div>
+
+    <div class="store-box">
+      <div class="store-hdr purple-hdr">
+        <span>⚠️</span> Visited Set
+      </div>
+      <div class="store-items" id="visited-set"></div>
+    </div>
+  </div>
+</div>
+
+<!-- LOG -->
+<div class="log-wrap">
+  <div class="log-hdr">
+    <span>Crawler Log</span>
+    <span style="color:#1e293b">BFS traversal · politeness delay · dedup · store</span>
+  </div>
+  <div class="log-body" id="log"></div>
+</div>
+
+<!-- CONTROLS -->
+<div class="controls">
+  <button class="btn" onclick="seedURL(0)">🌐 Seed example.com</button>
+  <button class="btn" onclick="seedURL(1)">📰 Seed HN</button>
+  <button class="btn" onclick="seedURL(2)">🐙 Seed GitHub</button>
+  <button class="btn" onclick="seedURL(3)">📖 Seed Wikipedia</button>
+  <button class="btn" onclick="seedURL(4)">🚫 Try Blocked</button>
+  <button class="btn" onclick="crawlNext()">▶ Crawl Next</button>
+  <button class="btn" id="auto-btn" onclick="toggleAuto()">⚡ Auto Crawl</button>
+  <button class="btn" onclick="resetAll()" style="border-color:#334155;color:#64748b;">↺ Reset</button>
+</div>
+<div class="speed-row">
+  Speed <input type="range" min="0.3" max="3" step="0.1" value="1" oninput="spd=parseFloat(this.value)">
+</div>
+
+<script>
+let spd = 1, autoTimer = null;
+let seedCount=0, crawledCount=0, linksFound=0, indexedCount=0, blockedCount=0;
+let urlQueue = [];
+let visitedSet = new Set();
+let workerBusy = [false,false,false,false];
+let activeWorker = -1;
+
+const SITES = [
+  { url:'https://example.com', short:'example.com', links:['example.com/about','example.com/products','example.com/blog'], color:'#2563eb' },
+  { url:'https://news.ycombinator.com', short:'ycombinator.com', links:['ycombinator.com/item?id=1','ycombinator.com/item?id=2','ycombinator.com/ask'], color:'#d97706' },
+  { url:'https://github.com', short:'github.com', links:['github.com/trending','github.com/explore','github.com/topics/js'], color:'#7c3aed' },
+  { url:'https://wikipedia.org', short:'wikipedia.org', links:['wikipedia.org/wiki/Crawler','wikipedia.org/wiki/Search','wikipedia.org/wiki/HTTP'], color:'#0891b2' },
+  { url:'https://blocked.site/private', short:'blocked.site', links:[], blocked:true, color:'#dc2626' },
+];
+
+const POLITENESS = [
+  { domain:'example.com',       delay:1000, crawlDelay:0 },
+  { domain:'ycombinator.com',   delay:2000, crawlDelay:0 },
+  { domain:'github.com',        delay:1500, crawlDelay:0 },
+  { domain:'wikipedia.org',     delay:800,  crawlDelay:0 },
+  { domain:'blocked.site',      delay:0,    crawlDelay:0 },
+];
+
+function d(ms){ return ms/spd; }
+
+function addLog(cls, msg){
+  const ts = new Date().toLocaleTimeString('en-GB',{hour12:false});
+  const el = document.createElement('div');
+  el.className='le';
+  el.innerHTML=`<span style="color:#1e293b">${ts}</span> <span class="${cls}">${msg}</span>`;
+  const lb=document.getElementById('log');
+  lb.appendChild(el);
+  lb.scrollTop=lb.scrollHeight;
+  if(lb.children.length>80) lb.removeChild(lb.firstChild);
+}
+
+function updateStats(){
+  document.getElementById('st-seed').textContent    = seedCount;
+  document.getElementById('st-crawled').textContent = crawledCount;
+  document.getElementById('st-links').textContent   = linksFound;
+  document.getElementById('st-queue').textContent   = urlQueue.length;
+  document.getElementById('st-indexed').textContent = indexedCount;
+  document.getElementById('st-blocked').textContent = blockedCount;
+  document.getElementById('frontier-count').textContent = urlQueue.length+' URLs';
+}
+
+/* Floating packet animation between two DOM elements */
+function flyPkt(fromEl, toEl, opts, onDone){
+  const fr = fromEl.getBoundingClientRect();
+  const to = toEl.getBoundingClientRect();
+  const fx = fr.left+fr.width/2, fy = fr.top+fr.height/2;
+  const tx = to.left+to.width/2, ty = to.top+to.height/2;
+
+  const pkt = document.createElement('div');
+  pkt.className='pkt';
+  const w=opts.w||80, h=opts.h||22;
+  pkt.style.cssText=`background:${opts.bg||'#1e293b'};border-color:${opts.border||'#334155'};color:${opts.color||'#e2e8f0'};width:${w}px;height:${h}px;left:${fx-w/2}px;top:${fy-h/2}px;opacity:1;`;
+  pkt.innerHTML=opts.label||'';
+  document.body.appendChild(pkt);
+
+  const dist=Math.hypot(tx-fx,ty-fy);
+  const dur=Math.max(300,dist/(200*spd)*1000);
+  pkt.animate([
+    {left:(fx-w/2)+'px',top:(fy-h/2)+'px',opacity:1},
+    {left:(tx-w/2)+'px',top:(ty-h/2)+'px',opacity:1}
+  ],{duration:dur,easing:'cubic-bezier(.4,0,.2,1)',fill:'forwards'})
+  .finished.then(()=>{ pkt.remove(); if(onDone) onDone(); });
+}
+
+function flash(el){
+  if(!el) return;
+  el.classList.remove('flashing');
+  void el.offsetWidth;
+  el.classList.add('flashing');
+  setTimeout(()=>el.classList.remove('flashing'),550);
+}
+
+function setWorker(i, state, task){
+  const box=document.getElementById('w'+i);
+  const badge=document.getElementById('wb'+i);
+  const taskEl=document.getElementById('wt'+i);
+  box.className='worker-box '+(state==='active'?'active':state==='done'?'done':'');
+  badge.className='worker-badge wb-'+(state==='active'?'fetch':state==='done'?'done':'idle');
+  badge.textContent=state==='active'?'FETCHING':state==='parse'?'PARSING':state==='done'?'DONE':'IDLE';
+  if(taskEl) taskEl.textContent=task||'—';
+}
+
+function lightPipe(idx, on){
+  document.getElementById('pipe-'+idx).classList.toggle('lit', on);
+}
+
+function addToFrontier(url, priority){
+  const slots=document.getElementById('frontier-slots');
+  document.getElementById('frontier-empty').style.display='none';
+  const item=document.createElement('div');
+  item.className='frontier-item';
+  item.id='fi-'+url.replace(/[^a-z0-9]/gi,'-');
+  item.innerHTML=`<span class="fi-icon">🔗</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;">${url}</span><span class="fi-pri">P${priority||1}</span>`;
+  slots.appendChild(item);
+}
+
+function removeFromFrontier(url){
+  const id='fi-'+url.replace(/[^a-z0-9]/gi,'-');
+  const el=document.getElementById(id);
+  if(el) el.remove();
+  if(!document.getElementById('frontier-slots').querySelector('.frontier-item')){
+    document.getElementById('frontier-empty').style.display='block';
+  }
+}
+
+function addToStore(storeId, text, isNew){
+  const store=document.getElementById(storeId);
+  const row=document.createElement('div');
+  row.className='store-row'+(isNew?' new':'');
+  row.textContent=text;
+  store.insertBefore(row,store.firstChild);
+  if(store.children.length>12) store.removeChild(store.lastChild);
+  setTimeout(()=>row.classList.remove('new'),1500);
+}
+
+function updatePoliteness(){
+  const container=document.getElementById('pol-rows');
+  container.innerHTML='';
+  POLITENESS.forEach(p=>{
+    const frac=Math.min(1,p.crawlDelay/3000);
+    const bar=`<div class="pol-bar"><div class="pol-fill" style="width:${frac*100}%;background:${frac>.6?'#dc2626':frac>.3?'#d97706':'#16a34a'};"></div></div>`;
+    container.innerHTML+=`<div class="pol-row"><span>${p.domain}</span><span style="color:#94a3b8">${p.crawlDelay}ms delay</span></div>${bar}`;
+  });
+}
+
+/* ══ SEED A URL ══ */
+function seedURL(siteIdx){
+  const site=SITES[siteIdx];
+  if(visitedSet.has(site.url) && !site.blocked){
+    addLog('lw',`[Frontier] Already visited ${site.short} — skipping`);
+    return;
+  }
+  if(site.blocked){
+    blockedCount++;
+    addLog('le-r',`[robots.txt] 🚫 ${site.short} — Disallow: / — blocked`);
+    document.getElementById('pg-'+siteIdx).classList.add('queued');
+    setTimeout(()=>document.getElementById('pg-'+siteIdx).classList.remove('queued'),800);
+    updateStats();
+    return;
+  }
+  seedCount++;
+  urlQueue.push({siteIdx, url:site.url, short:site.short, priority:1});
+  addToFrontier(site.url, 1);
+  document.getElementById('pg-'+siteIdx).classList.add('queued');
+  addLog('lf',`[Seed] Added ${site.url} to URL Frontier`);
+  updateStats();
+}
+
+/* ══ CRAWL NEXT FROM QUEUE ══ */
+function crawlNext(){
+  if(urlQueue.length===0){
+    addLog('lw','[Crawler] Queue empty — add seed URLs first');
+    return;
+  }
+  const freeW=workerBusy.indexOf(false);
+  if(freeW===-1){
+    addLog('lw','[Crawler] All workers busy — please wait');
+    return;
+  }
+  const job=urlQueue.shift();
+  workerBusy[freeW]=true;
+  removeFromFrontier(job.url);
+  runCrawlJob(freeW, job);
+  updateStats();
+}
+
+function runCrawlJob(wIdx, job){
+  const site=SITES[job.siteIdx];
+  const pageEl=document.getElementById('pg-'+job.siteIdx);
+  const wEl=document.getElementById('w'+wIdx);
+
+  setWorker(wIdx,'active',job.short);
+  addLog('lf',`[Worker ${wIdx+1}] Dequeued: ${job.url}`);
+
+  /* Step 1: DNS Resolve */
+  lightPipe(0,true);
+  addLog('lf',`[Worker ${wIdx+1}] DNS resolving ${job.short}…`);
+  setTimeout(()=>{
+    lightPipe(0,false); lightPipe(1,true);
+
+    /* Step 2: Fetch */
+    addLog('lf',`[Worker ${wIdx+1}] HTTP GET ${job.url}`);
+    flyPkt(wEl, pageEl, {
+      bg:'#0c1a2e',border:'#2563eb',color:'#93c5fd',label:`🕷️ GET`,w:64,h:22
+    }, ()=>{
+      pageEl.classList.add('crawling');
+      flash(pageEl);
+
+      setTimeout(()=>{
+        lightPipe(1,false); lightPipe(2,true);
+        pageEl.classList.remove('crawling');
+        pageEl.classList.add('crawled');
+
+        /* Step 3: Parse HTML */
+        addLog('lw',`[Worker ${wIdx+1}] Parsing HTML… found ${site.links.length} links`);
+        setWorker(wIdx,'parse',job.short);
+
+        /* Flying response back */
+        flyPkt(pageEl, wEl, {
+          bg:'#0d1f0d',border:'#16a34a',color:'#86efac',label:`📄 200 OK`,w:72,h:22
+        }, ()=>{
+          lightPipe(2,false); lightPipe(3,true);
+
+          /* Step 4: Extract URLs */
+          linksFound+=site.links.length;
+          addLog('lp',`[Parser] Extracted ${site.links.length} URLs from ${job.short}`);
+
+          setTimeout(()=>{
+            lightPipe(3,false); lightPipe(4,true);
+
+            /* Step 5: Deduplicate & enqueue new links */
+            let newLinks=0;
+            site.links.forEach((link,i)=>{
+              const fullUrl='https://'+link;
+              if(!visitedSet.has(fullUrl) && urlQueue.length<8){
+                urlQueue.push({siteIdx:job.siteIdx, url:fullUrl, short:link, priority:2});
+                addToFrontier(fullUrl, 2);
+                newLinks++;
+              }
+            });
+            visitedSet.add(job.url);
+            addLog('lp',`[Dedup] ${newLinks} new URLs enqueued, ${site.links.length-newLinks} duplicates skipped`);
+
+            setTimeout(()=>{
+              lightPipe(4,false); lightPipe(5,true);
+
+              /* Step 6: Store & Index */
+              crawledCount++;
+              indexedCount++;
+              visitedSet.add(job.url);
+
+              /* Update politeness */
+              const pol=POLITENESS[job.siteIdx];
+              pol.crawlDelay=Math.min(3000, pol.crawlDelay+500);
+              updatePoliteness();
+
+              addToStore('url-index', job.short, true);
+              addToStore('content-store', `[${new Date().toLocaleTimeString()}] ${job.short}`, true);
+              addToStore('link-graph', `${job.short} → ${site.links.length} links`, true);
+              addToStore('visited-set', job.url, true);
+
+              addLog('ls',`[Store] Indexed: ${job.url}`);
+
+              setTimeout(()=>{
+                lightPipe(5,false);
+                setWorker(wIdx,'done',job.short);
+                workerBusy[wIdx]=false;
+                updateStats();
+                setTimeout(()=>{
+                  setWorker(wIdx,'idle','—');
+                  /* Auto-dispatch next if queue has items */
+                  if(urlQueue.length>0 && workerBusy.includes(false)){
+                    setTimeout(()=>crawlNext(), d(300));
+                  }
+                }, d(500));
+              }, d(400));
+            }, d(350));
+          }, d(350));
+        });
+      }, d(600));
+    });
+  }, d(300));
+}
+
+/* ══ AUTO CRAWL ══ */
+function toggleAuto(){
+  const btn=document.getElementById('auto-btn');
+  if(autoTimer){
+    clearInterval(autoTimer);
+    autoTimer=null;
+    btn.textContent='⚡ Auto Crawl';
+    btn.classList.remove('active');
+  } else {
+    btn.textContent='⏹ Stop';
+    btn.classList.add('active');
+    let tick=0;
+    autoTimer=setInterval(()=>{
+      const freeW=workerBusy.indexOf(false);
+      if(urlQueue.length===0){
+        /* seed a new one */
+        const idx=tick%4;
+        seedURL(idx);
+      } else if(freeW!==-1){
+        crawlNext();
+      }
+      tick++;
+    }, d(1400));
+  }
+}
+
+/* ══ RESET ══ */
+function resetAll(){
+  urlQueue=[];
+  visitedSet=new Set();
+  workerBusy=[false,false,false,false];
+  seedCount=crawledCount=linksFound=indexedCount=blockedCount=0;
+  for(let i=0;i<4;i++) setWorker(i,'idle','—');
+  for(let i=0;i<6;i++) lightPipe(i,false);
+  document.getElementById('frontier-slots').innerHTML='<div class="frontier-empty" id="frontier-empty">Add seed URLs to begin crawling</div>';
+  ['url-index','content-store','link-graph','visited-set'].forEach(id=>{
+    document.getElementById(id).innerHTML='';
+  });
+  SITES.forEach((_,i)=>{
+    const pg=document.getElementById('pg-'+i);
+    pg.classList.remove('crawling','crawled','queued');
+  });
+  POLITENESS.forEach(p=>p.crawlDelay=0);
+  updatePoliteness();
+  document.getElementById('log').innerHTML='';
+  updateStats();
+  addLog('ls','[System] Crawler reset — ready');
+}
+
+/* ══ INIT ══ */
+updatePoliteness();
+updateStats();
+addLog('ls','[System] Web Crawler ready — click a site or seed button to start crawling');
+addLog('lf','[Frontier] Waiting for seed URLs…');
+</script>
+</body>
+</html>
