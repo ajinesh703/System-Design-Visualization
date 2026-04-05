@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Circuit Breaker — System Design</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: #0d1117;
+  color: #e2e8f0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 22px 16px 30px;
+}
+
+h1 { font-size: 22px; font-weight: 700; color: #f1f5f9; margin-bottom: 3px; }
+.subtitle { font-size: 11px; color: #475569; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 18px; }
+
+/* ═══ STATS ══════════════════════════════════ */
+.stats-bar {
+  display: flex; gap: 12px; justify-content: center;
+  margin-bottom: 16px; flex-wrap: wrap;
+}
+.stat-pill {
+  background: #111827; border: 1px solid #1e293b;
+  border-radius: 8px; padding: 5px 14px;
+  font-size: 11px; color: #64748b;
+  display: flex; align-items: center; gap: 6px;
+}
+.stat-pill b { font-size: 14px; font-weight: 700; color: #e2e8f0; }
+
+/* ═══ CANVAS ═════════════════════════════════ */
+.canvas {
+  position: relative;
+  width: 980px;
+  height: 490px;
+}
+
+/* ═══ SECTION LABELS ════════════════════════ */
+.sec-label {
+  position: absolute;
+  font-size: 10px; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: #1e293b; top: 6px; text-align: center;
+}
+.divider {
+  position: absolute; top: 24px; bottom: 12px;
+  width: 1px; background: #161e2e;
+}
+
+/* ═══ CLIENT ════════════════════════════════ */
+.client-node {
+  position: absolute;
+  left: 18px; top: 168px;
+  width: 110px;
+  background: #111827;
+  border: 1.5px solid #1e3a5f;
+  border-radius: 12px;
+  padding: 14px 8px 12px;
+  display: flex; flex-direction: column;
+  align-items: center; gap: 6px;
+  cursor: pointer;
+  transition: filter .2s, transform .15s;
+  z-index: 5;
+  user-select: none;
+}
+.client-node:hover { transform: translateY(-2px); filter: brightness(1.15); }
+.cl-icon { font-size: 26px; }
+.cl-name { font-size: 12px; font-weight: 700; color: #94a3b8; }
+.cl-sub  { font-size: 9px; color: #475569; }
+
+/* ═══ CIRCUIT BREAKER BOX ═══════════════════ */
+#cb-wrap {
+  position: absolute;
+  left: 310px; top: 100px;
+  width: 200px; height: 290px;
+  z-index: 10;
+}
+
+.cb-outer {
+  width: 200px; height: 290px;
+  border-radius: 18px;
+  border: 2px solid;
+  display: flex; flex-direction: column;
+  align-items: center;
+  overflow: hidden;
+  transition: border-color .4s, box-shadow .4s;
+}
+
+/* State colors */
+.cb-outer.closed  { border-color: #16a34a; box-shadow: 0 0 24px rgba(22,163,74,.25); background: #061209; }
+.cb-outer.open    { border-color: #dc2626; box-shadow: 0 0 24px rgba(220,38,38,.35); background: #160505; }
+.cb-outer.half    { border-color: #d97706; box-shadow: 0 0 24px rgba(217,119,6,.3);  background: #150d02; }
+
+.cb-header {
+  width: 100%;
+  padding: 10px 14px 8px;
+  text-align: center;
+  border-bottom: 1px solid #1e293b;
+}
+.cb-state-badge {
+  display: inline-block;
+  font-size: 11px; font-weight: 800;
+  padding: 3px 14px; border-radius: 20px;
+  letter-spacing: .06em; margin-bottom: 4px;
+  transition: background .4s, color .4s;
+}
+.state-closed { background: #14532d; color: #4ade80; }
+.state-open   { background: #450a0a; color: #f87171; }
+.state-half   { background: #451a03; color: #fb923c; }
+
+.cb-name { font-size: 12px; font-weight: 700; color: #94a3b8; }
+
+/* Circuit diagram inside */
+.cb-diagram {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  position: relative;
+}
+
+/* The actual circuit line */
+.circuit-line {
+  position: relative;
+  width: 100%;
+  height: 60px;
+  display: flex;
+  align-items: center;
+}
+
+.wire {
+  height: 3px;
+  background: #1e293b;
+  transition: background .4s;
+  flex-shrink: 0;
+}
+.wire.live-closed { background: #4ade80; box-shadow: 0 0 6px #4ade80; }
+.wire.live-open   { background: #334155; box-shadow: none; }
+.wire.live-half   { background: #fb923c; box-shadow: 0 0 4px #fb923c; }
+.wire-left  { width: 28%; }
+.wire-right { width: 28%; }
+
+/* Switch element */
+.switch-wrap {
+  width: 44%;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.switch-svg {
+  width: 80px; height: 60px;
+}
+
+/* Counter gauges */
+.cb-gauges {
+  width: 100%;
+  padding: 0 12px 10px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.gauge-row {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 9px; color: #475569; margin-bottom: 1px;
+}
+.gauge-bar { height: 4px; background: #1e293b; border-radius: 2px; overflow: hidden; }
+.gauge-fill { height: 100%; border-radius: 2px; transition: width .4s ease; }
+
+/* Timeout countdown */
+.cb-timer {
+  font-size: 10px; color: #475569; text-align: center;
+  padding: 4px 0 8px;
+}
+.timer-val { font-weight: 700; color: #fb923c; font-size: 13px; }
+
+/* ═══ SERVICE NODE ══════════════════════════ */
+.service-node {
+  position: absolute;
+  right: 18px; top: 168px;
+  width: 120px;
+  border-radius: 12px;
+  border: 1.5px solid;
+  padding: 14px 8px 12px;
+  display: flex; flex-direction: column;
+  align-items: center; gap: 6px;
+  transition: border-color .3s, box-shadow .3s;
+  z-index: 5;
+}
+.svc-icon { font-size: 26px; }
+.svc-name { font-size: 12px; font-weight: 700; }
+.svc-sub  { font-size: 9px; opacity: .65; }
+.svc-health {
+  font-size: 9px; font-weight: 700; padding: 2px 8px;
+  border-radius: 6px; letter-spacing: .04em;
+}
+
+/* ═══ FALLBACK BOX ══════════════════════════ */
+.fallback-node {
+  position: absolute;
+  right: 18px; top: 330px;
+  width: 120px;
+  background: #150d02;
+  border: 1.5px solid #92400e;
+  border-radius: 12px;
+  padding: 10px 8px;
+  display: flex; flex-direction: column;
+  align-items: center; gap: 4px;
+  z-index: 5;
+  opacity: .45;
+  transition: opacity .4s, box-shadow .4s;
+}
+.fallback-node.active { opacity: 1; box-shadow: 0 0 16px rgba(251,146,60,.3); }
+
+/* ═══ STATE MACHINE DIAGRAM ═════════════════ */
+.state-machine {
+  position: absolute;
+  bottom: 14px; left: 18px;
+  width: 270px;
+  background: #111827;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  padding: 10px 12px 10px;
+}
+.sm-title { font-size: 9px; font-weight: 700; color: #334155; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 8px; }
+.sm-states {
+  display: flex; gap: 8px; align-items: center; justify-content: center;
+}
+.sm-state {
+  width: 64px; height: 40px;
+  border-radius: 8px;
+  border: 1.5px solid;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 700; letter-spacing: .04em;
+  transition: box-shadow .3s;
+}
+.sm-state.active-state { box-shadow: 0 0 12px 2px; }
+.sm-closed { background: #061209; border-color: #16a34a; color: #4ade80; }
+.sm-closed.active-state { box-shadow: 0 0 12px 2px #16a34a; }
+.sm-open   { background: #160505; border-color: #dc2626; color: #f87171; }
+.sm-open.active-state   { box-shadow: 0 0 12px 2px #dc2626; }
+.sm-half   { background: #150d02; border-color: #d97706; color: #fb923c; }
+.sm-half.active-state   { box-shadow: 0 0 12px 2px #d97706; }
+.sm-arrow { font-size: 12px; color: #334155; }
+
+/* ═══ REQUEST LOG FEED ══════════════════════ */
+.req-feed {
+  position: absolute;
+  bottom: 14px; left: 306px;
+  width: 200px; height: 130px;
+  background: #111827;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.req-feed-hdr {
+  padding: 6px 10px;
+  font-size: 9px; font-weight: 700; color: #334155;
+  letter-spacing: .07em; text-transform: uppercase;
+  border-bottom: 1px solid #1e293b;
+}
+.req-feed-body {
+  height: 100px; overflow-y: auto;
+  padding: 4px 8px;
+  font-family: 'Courier New', monospace; font-size: 10px; line-height: 1.7;
+}
+.rf-ok  { color: #4ade80; }
+.rf-err { color: #f87171; }
+.rf-blk { color: #fb923c; }
+.rf-prt { color: #fbbf24; }
+@keyframes rf-in { from { opacity:0; transform:translateY(3px); } to { opacity:1; } }
+.rf-row { animation: rf-in .2s ease; }
+
+/* ═══ CONFIG PANEL ══════════════════════════ */
+.config-panel {
+  position: absolute;
+  bottom: 14px; right: 18px;
+  width: 230px;
+  background: #111827;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.cfg-title { font-size: 9px; font-weight: 700; color: #334155; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 8px; }
+.cfg-row {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 10px; color: #64748b; margin-bottom: 6px;
+}
+.cfg-val {
+  background: #1e293b; color: #94a3b8;
+  font-size: 10px; font-weight: 700; font-family: monospace;
+  padding: 1px 6px; border-radius: 4px; min-width: 32px; text-align: center;
+}
+input.cfg-slider { width: 80px; accent-color: #7c3aed; }
+
+/* ═══ MOVING PACKETS ════════════════════════ */
+.pkt {
+  position: fixed;
+  pointer-events: none;
+  z-index: 100;
+  border-radius: 20px;
+  font-size: 10px; font-weight: 700;
+  display: flex; align-items: center; gap: 4px;
+  padding: 3px 10px;
+  white-space: nowrap;
+  border: 1.5px solid rgba(255,255,255,.15);
+  box-shadow: 0 2px 12px rgba(0,0,0,.5);
+}
+
+/* Flash */
+@keyframes flash-anim {
+  0%   { filter: brightness(2) drop-shadow(0 0 10px currentColor); }
+  100% { filter: brightness(1); }
+}
+.flashing { animation: flash-anim .5s ease-out; }
+
+/* Error shake */
+@keyframes shake {
+  0%,100%{ transform: translateX(0); }
+  20%    { transform: translateX(-6px); }
+  40%    { transform: translateX(6px); }
+  60%    { transform: translateX(-4px); }
+  80%    { transform: translateX(4px); }
+}
+.shaking { animation: shake .4s ease; }
+
+/* ═══ LOG ════════════════════════════════════ */
+.log-wrap {
+  width: 980px; margin: 12px auto 0;
+  background: #0a0d14; border: 1px solid #1e293b;
+  border-radius: 10px; overflow: hidden;
+}
+.log-hdr {
+  padding: 7px 14px; font-size: 10px; font-weight: 700;
+  color: #334155; border-bottom: 1px solid #1e293b;
+  letter-spacing: .07em; text-transform: uppercase;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.log-body {
+  height: 72px; overflow-y: auto; padding: 5px 14px;
+  font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.7;
+}
+@keyframes li { from { opacity:0; transform:translateY(3px); } to { opacity:1; } }
+.le { animation: li .2s ease; }
+.lc-ok  { color: #4ade80; }
+.lc-err { color: #f87171; }
+.lc-cb  { color: #fb923c; }
+.lc-i   { color: #60a5fa; }
+.lc-h   { color: #fbbf24; }
+
+/* ═══ CONTROLS ══════════════════════════════ */
+.controls {
+  display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;
+  margin: 12px 0 0;
+}
+.btn {
+  font-size: 12px; font-weight: 600; padding: 7px 15px;
+  border-radius: 8px; border: 1px solid #1e293b;
+  background: #111827; color: #e2e8f0;
+  cursor: pointer; transition: background .15s;
+}
+.btn:hover { background: #1e293b; }
+.btn.active { background: #172554; border-color: #2563eb; color: #93c5fd; }
+.btn.red    { border-color: #7f1d1d; color: #fca5a5; }
+.btn.red:hover { background: #1c0505; }
+.btn.amber  { border-color: #78350f; color: #fcd34d; }
+.btn.amber:hover { background: #1c1004; }
+
+.speed-row {
+  display: flex; align-items: center; gap: 8px; justify-content: center;
+  margin: 8px 0 0; font-size: 11px; color: #475569;
+}
+input[type=range] { width: 80px; accent-color: #7c3aed; }
+</style>
+</head>
+<body>
+
+<h1>Circuit Breaker</h1>
+<div class="subtitle">Resilience Pattern — System Design Animation</div>
+
+<div class="stats-bar">
+  <div class="stat-pill">Total Requests <b id="st-total">0</b></div>
+  <div class="stat-pill" style="border-color:#14532d">✓ Success <b id="st-ok" style="color:#4ade80">0</b></div>
+  <div class="stat-pill" style="border-color:#450a0a">✗ Failures <b id="st-fail" style="color:#f87171">0</b></div>
+  <div class="stat-pill" style="border-color:#451a03">⚡ Blocked <b id="st-blk" style="color:#fb923c">0</b></div>
+  <div class="stat-pill">State <b id="st-state" style="color:#4ade80">CLOSED</b></div>
+  <div class="stat-pill">Fail Rate <b id="st-frate">0%</b></div>
+</div>
+
+<div class="canvas" id="canvas">
+
+  <!-- Section Labels -->
+  <div class="sec-label" style="left:0;width:160px;">Client</div>
+  <div class="sec-label" style="left:300px;width:220px;">Circuit Breaker</div>
+  <div class="sec-label" style="left:700px;width:260px;">Service</div>
+  <div class="divider" style="left:296px;"></div>
+  <div class="divider" style="left:680px;"></div>
+
+  <!-- ══ CLIENT ══ -->
+  <div class="client-node" id="client" onclick="sendRequest()" title="Click to send request">
+    <div class="cl-icon">💻</div>
+    <div class="cl-name">Client</div>
+    <div class="cl-sub">click to request</div>
+  </div>
+
+  <!-- ══ CIRCUIT BREAKER ══ -->
+  <div id="cb-wrap">
+    <div class="cb-outer closed" id="cb-outer">
+      <div class="cb-header">
+        <div class="cb-state-badge state-closed" id="cb-badge">CLOSED</div>
+        <div class="cb-name">Circuit Breaker</div>
+      </div>
+
+      <!-- Animated Circuit SVG -->
+      <div class="cb-diagram">
+        <div class="circuit-line">
+          <div class="wire wire-left live-closed" id="wire-l"></div>
+          <div class="switch-wrap">
+            <svg class="switch-svg" viewBox="0 0 80 60" id="switch-svg">
+              <!-- Left terminal -->
+              <circle cx="12" cy="30" r="4" fill="#4ade80" id="term-l"/>
+              <!-- Right terminal -->
+              <circle cx="68" cy="30" r="4" fill="#4ade80" id="term-r"/>
+              <!-- Switch arm -->
+              <line id="sw-arm" x1="16" y1="30" x2="64" y2="30"
+                stroke="#4ade80" stroke-width="3"
+                stroke-linecap="round"/>
+              <!-- Open gap spark (hidden by default) -->
+              <g id="spark-grp" opacity="0">
+                <circle cx="40" cy="22" r="2" fill="#f87171"/>
+                <line x1="36" y1="26" x2="44" y2="18" stroke="#f87171" stroke-width="1.5"/>
+                <line x1="44" y1="26" x2="36" y2="18" stroke="#f87171" stroke-width="1.5"/>
+              </g>
+            </svg>
+          </div>
+          <div class="wire wire-right live-closed" id="wire-r"></div>
+        </div>
+      </div>
+
+      <!-- Gauges -->
+      <div class="cb-gauges">
+        <div>
+          <div class="gauge-row"><span>Failure count</span><span id="g-fail-val">0 / 3</span></div>
+          <div class="gauge-bar"><div class="gauge-fill" id="g-fail" style="width:0%;background:#f87171;"></div></div>
+        </div>
+        <div>
+          <div class="gauge-row"><span>Success (half-open)</span><span id="g-succ-val">0 / 2</span></div>
+          <div class="gauge-bar"><div class="gauge-fill" id="g-succ" style="width:0%;background:#4ade80;"></div></div>
+        </div>
+      </div>
+      <div class="cb-timer" id="cb-timer">&nbsp;</div>
+    </div>
+  </div>
+
+  <!-- ══ SERVICE ══ -->
+  <div class="service-node" id="service"
+    style="background:#0d1f0d;border-color:#16a34a;color:#86efac;">
+    <div class="svc-icon">🖥️</div>
+    <div class="svc-name">Backend Service</div>
+    <div class="svc-sub">API / Database</div>
+    <div class="svc-health" id="svc-health" style="background:#14532d;color:#4ade80;">HEALTHY</div>
+  </div>
+
+  <!-- ══ FALLBACK ══ -->
+  <div class="fallback-node" id="fallback">
+    <div style="font-size:20px;">🛡️</div>
+    <div style="font-size:10px;font-weight:700;color:#fb923c;">Fallback</div>
+    <div style="font-size:9px;color:#78350f;">cached / default</div>
+  </div>
+
+  <!-- ══ STATE MACHINE ══ -->
+  <div class="state-machine">
+    <div class="sm-title">State Machine</div>
+    <div class="sm-states">
+      <div class="sm-state sm-closed active-state" id="sm-closed">CLOSED</div>
+      <div class="sm-arrow">⇄</div>
+      <div class="sm-state sm-open" id="sm-open">OPEN</div>
+      <div class="sm-arrow">→</div>
+      <div class="sm-state sm-half" id="sm-half">HALF</div>
+    </div>
+  </div>
+
+  <!-- ══ REQUEST FEED ══ -->
+  <div class="req-feed">
+    <div class="req-feed-hdr">Recent Requests</div>
+    <div class="req-feed-body" id="req-feed"></div>
+  </div>
+
+  <!-- ══ CONFIG PANEL ══ -->
+  <div class="config-panel">
+    <div class="cfg-title">⚙️ Configuration</div>
+    <div class="cfg-row">
+      <span>Failure threshold</span>
+      <input class="cfg-slider" type="range" min="2" max="6" value="3"
+        oninput="FAIL_THRESHOLD=+this.value;document.getElementById('cfg-ft').textContent=this.value">
+      <span class="cfg-val" id="cfg-ft">3</span>
+    </div>
+    <div class="cfg-row">
+      <span>Timeout (s)</span>
+      <input class="cfg-slider" type="range" min="2" max="8" value="4"
+        oninput="OPEN_TIMEOUT=this.value*1000;document.getElementById('cfg-to').textContent=this.value">
+      <span class="cfg-val" id="cfg-to">4</span>
+    </div>
+    <div class="cfg-row">
+      <span>Half-open probes</span>
+      <input class="cfg-slider" type="range" min="1" max="4" value="2"
+        oninput="HALF_OPEN_SUCCESS=+this.value;document.getElementById('cfg-hp').textContent=this.value">
+      <span class="cfg-val" id="cfg-hp">2</span>
+    </div>
+    <div class="cfg-row">
+      <span>Service health</span>
+      <input class="cfg-slider" type="range" min="0" max="100" value="100"
+        oninput="SVC_HEALTH=+this.value;document.getElementById('cfg-sh').textContent=this.value+'%'">
+      <span class="cfg-val" id="cfg-sh">100%</span>
+    </div>
+  </div>
+
+  <!-- Packet layer -->
+  <div id="pkts" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:30;"></div>
+</div>
+
+<!-- LOG -->
+<div class="log-wrap">
+  <div class="log-hdr">
+    <span>Circuit Breaker Log</span>
+    <span style="color:#1e293b">Closed → Open → Half-Open → Closed</span>
+  </div>
+  <div class="log-body" id="log"></div>
+</div>
+
+<!-- CONTROLS -->
+<div class="controls">
+  <button class="btn" onclick="sendRequest()">📤 Send Request</button>
+  <button class="btn red" onclick="forceFailures()">💥 Force 3 Failures</button>
+  <button class="btn amber" onclick="halfOpenProbe()">🔬 Probe (Half-Open)</button>
+  <button class="btn" onclick="healService()">💊 Heal Service</button>
+  <button class="btn" id="auto-btn" onclick="toggleAuto()">▶ Auto Demo</button>
+  <button class="btn" onclick="resetAll()" style="color:#475569;">↺ Reset</button>
+</div>
+<div class="speed-row">
+  Speed <input type="range" min="0.3" max="3" step="0.1" value="1" oninput="spd=parseFloat(this.value)">
+</div>
+
+<script>
+/* ══ CONFIG ══ */
+let spd = 1;
+let autoTimer = null;
+
+let FAIL_THRESHOLD   = 3;
+let OPEN_TIMEOUT     = 4000;
+let HALF_OPEN_SUCCESS= 2;
+let SVC_HEALTH       = 100;
+
+/* ══ STATE ══ */
+let cbState      = 'closed'; // closed | open | half
+let failCount    = 0;
+let successCount = 0; // half-open successes
+let halfProbeCount=0;
+let totalReq=0, okReq=0, failReq=0, blockedReq=0;
+let openTimer    = null;
+let halfTimerActive = false;
+let reqInFlight  = false;
+
+function d(ms){ return ms/spd; }
+
+/* ══ LOGGING ══ */
+function addLog(cls, msg){
+  const ts = new Date().toLocaleTimeString('en-GB',{hour12:false});
+  const el = document.createElement('div');
+  el.className = 'le';
+  el.innerHTML = `<span style="color:#1e293b">${ts}</span> <span class="${cls}">${msg}</span>`;
+  const lb = document.getElementById('log');
+  lb.appendChild(el);
+  lb.scrollTop = lb.scrollHeight;
+  if(lb.children.length > 80) lb.removeChild(lb.firstChild);
+}
+
+function addFeed(cls, msg){
+  const el = document.createElement('div');
+  el.className = 'rf-row';
+  el.innerHTML = `<span class="${cls}">${msg}</span>`;
+  const fb = document.getElementById('req-feed');
+  fb.insertBefore(el, fb.firstChild);
+  if(fb.children.length > 20) fb.removeChild(fb.lastChild);
+}
+
+/* ══ STATS ══ */
+function updateStats(){
+  document.getElementById('st-total').textContent = totalReq;
+  document.getElementById('st-ok').textContent    = okReq;
+  document.getElementById('st-fail').textContent  = failReq;
+  document.getElementById('st-blk').textContent   = blockedReq;
+  document.getElementById('st-state').textContent = cbState.toUpperCase().replace('HALF','HALF-OPEN');
+  document.getElementById('st-state').style.color =
+    cbState==='closed'?'#4ade80': cbState==='open'?'#f87171':'#fb923c';
+  const rate = totalReq ? Math.round(failReq/totalReq*100) : 0;
+  document.getElementById('st-frate').textContent = rate+'%';
+  document.getElementById('st-frate').style.color = rate>50?'#f87171':rate>20?'#fbbf24':'#4ade80';
+}
+
+/* ══ GAUGE UPDATES ══ */
+function updateGauges(){
+  const fp = Math.min(100, failCount/FAIL_THRESHOLD*100);
+  document.getElementById('g-fail').style.width    = fp+'%';
+  document.getElementById('g-fail-val').textContent= failCount+' / '+FAIL_THRESHOLD;
+
+  const sp = Math.min(100, successCount/HALF_OPEN_SUCCESS*100);
+  document.getElementById('g-succ').style.width    = sp+'%';
+  document.getElementById('g-succ-val').textContent= successCount+' / '+HALF_OPEN_SUCCESS;
+}
+
+/* ══ CIRCUIT VISUAL ══ */
+function setCBVisual(state){
+  const outer = document.getElementById('cb-outer');
+  const badge = document.getElementById('cb-badge');
+  const arm   = document.getElementById('sw-arm');
+  const termL = document.getElementById('term-l');
+  const termR = document.getElementById('term-r');
+  const spark = document.getElementById('spark-grp');
+  const wL    = document.getElementById('wire-l');
+  const wR    = document.getElementById('wire-r');
+
+  outer.className = 'cb-outer ' + state;
+  badge.className = 'cb-state-badge state-' + (state==='half'?'half':'')+(state==='closed'?'closed':'')+(state==='open'?'open':'');
+  badge.textContent = state==='closed'?'CLOSED': state==='open'?'OPEN':'HALF-OPEN';
+
+  if(state==='closed'){
+    arm.setAttribute('x1','16'); arm.setAttribute('y1','30');
+    arm.setAttribute('x2','64'); arm.setAttribute('y2','30');
+    arm.setAttribute('stroke','#4ade80');
+    termL.setAttribute('fill','#4ade80');
+    termR.setAttribute('fill','#4ade80');
+    spark.setAttribute('opacity','0');
+    wL.className='wire wire-left live-closed';
+    wR.className='wire wire-right live-closed';
+  } else if(state==='open'){
+    arm.setAttribute('x1','16'); arm.setAttribute('y1','30');
+    arm.setAttribute('x2','50'); arm.setAttribute('y2','14');
+    arm.setAttribute('stroke','#f87171');
+    termL.setAttribute('fill','#f87171');
+    termR.setAttribute('fill','#334155');
+    spark.setAttribute('opacity','1');
+    wL.className='wire wire-left live-open';
+    wR.className='wire wire-right live-open';
+  } else {
+    arm.setAttribute('x1','16'); arm.setAttribute('y1','30');
+    arm.setAttribute('x2','58'); arm.setAttribute('y2','20');
+    arm.setAttribute('stroke','#fb923c');
+    termL.setAttribute('fill','#fb923c');
+    termR.setAttribute('fill','#fb923c');
+    spark.setAttribute('opacity','0');
+    wL.className='wire wire-left live-half';
+    wR.className='wire wire-right live-half';
+  }
+}
+
+/* ══ STATE MACHINE HIGHLIGHT ══ */
+function highlightSM(state){
+  ['closed','open','half'].forEach(s=>{
+    document.getElementById('sm-'+s).classList.toggle('active-state', s===state);
+  });
+}
+
+/* ══ SERVICE VISUAL ══ */
+function updateServiceVisual(){
+  const sEl = document.getElementById('service');
+  const hEl = document.getElementById('svc-health');
+  if(SVC_HEALTH >= 80){
+    sEl.style.borderColor='#16a34a'; sEl.style.background='#0d1f0d';
+    hEl.style.background='#14532d'; hEl.style.color='#4ade80';
+    hEl.textContent='HEALTHY';
+  } else if(SVC_HEALTH >= 40){
+    sEl.style.borderColor='#d97706'; sEl.style.background='#150d02';
+    hEl.style.background='#451a03'; hEl.style.color='#fb923c';
+    hEl.textContent='DEGRADED';
+  } else {
+    sEl.style.borderColor='#dc2626'; sEl.style.background='#160505';
+    hEl.style.background='#450a0a'; hEl.style.color='#f87171';
+    hEl.textContent='DOWN';
+  }
+}
+
+/* ══ TRANSITION TO OPEN ══ */
+function tripOpen(){
+  cbState = 'open';
+  failCount = FAIL_THRESHOLD;
+  successCount = 0;
+  setCBVisual('open');
+  highlightSM('open');
+  updateGauges();
+  document.getElementById('fallback').classList.add('active');
+  addLog('lc-err', `[Circuit Breaker] ⚡ TRIPPED OPEN — ${FAIL_THRESHOLD} failures exceeded!`);
+  addLog('lc-cb',  `[Circuit Breaker] All requests blocked. Timeout: ${OPEN_TIMEOUT/1000}s`);
+  addFeed('rf-blk', '⚡ CB OPEN');
+
+  // Start timeout countdown
+  let remaining = Math.ceil(OPEN_TIMEOUT/1000);
+  document.getElementById('cb-timer').innerHTML = `Reset in <span class="timer-val">${remaining}s</span>`;
+  const countdown = setInterval(()=>{
+    remaining = Math.max(0, remaining-1);
+    document.getElementById('cb-timer').innerHTML = `Reset in <span class="timer-val">${remaining}s</span>`;
+    if(remaining <= 0) clearInterval(countdown);
+  }, 1000);
+
+  // After timeout → half-open
+  if(openTimer) clearTimeout(openTimer);
+  openTimer = setTimeout(()=>{
+    transitionHalf();
+    document.getElementById('cb-timer').innerHTML = '';
+  }, d(OPEN_TIMEOUT));
+  updateStats();
+}
+
+/* ══ TRANSITION TO HALF-OPEN ══ */
+function transitionHalf(){
+  cbState = 'half';
+  successCount = 0;
+  halfProbeCount = 0;
+  setCBVisual('half');
+  highlightSM('half');
+  updateGauges();
+  addLog('lc-h', `[Circuit Breaker] → HALF-OPEN — allowing probe requests`);
+  addFeed('rf-prt','🔬 HALF-OPEN');
+  updateStats();
+}
+
+/* ══ TRANSITION TO CLOSED ══ */
+function transitionClosed(){
+  cbState = 'closed';
+  failCount = 0;
+  successCount = 0;
+  setCBVisual('closed');
+  highlightSM('closed');
+  updateGauges();
+  document.getElementById('fallback').classList.remove('active');
+  addLog('lc-ok', `[Circuit Breaker] ✓ CLOSED — service recovered!`);
+  addFeed('rf-ok', '✓ CLOSED');
+  updateStats();
+}
+
+/* ══ PACKET ANIMATION ══ */
+function flyPkt(fromEl, toEl, opts, onDone){
+  const fr = fromEl.getBoundingClientRect();
+  const to = toEl.getBoundingClientRect();
+  const fx = fr.left+fr.width/2, fy = fr.top+fr.height/2;
+  const tx = to.left+to.width/2, ty = to.top+to.height/2;
+  const pkt = document.createElement('div');
+  pkt.className = 'pkt';
+  const w=opts.w||80, h=opts.h||24;
+  pkt.style.cssText = `background:${opts.bg};border-color:${opts.border};color:${opts.color};width:${w}px;height:${h}px;left:${fx-w/2}px;top:${fy-h/2}px;opacity:1;`;
+  pkt.innerHTML = opts.label;
+  document.body.appendChild(pkt);
+  const dist = Math.hypot(tx-fx, ty-fy);
+  const dur  = Math.max(250, dist/(200*spd)*1000);
+  pkt.animate([
+    {left:(fx-w/2)+'px', top:(fy-h/2)+'px', opacity:1},
+    {left:(tx-w/2)+'px', top:(ty-h/2)+'px', opacity:1}
+  ],{duration:dur, easing:'cubic-bezier(.4,0,.2,1)', fill:'forwards'})
+  .finished.then(()=>{ pkt.remove(); if(onDone) onDone(); });
+}
+
+function flash(el){
+  if(!el) return;
+  el.classList.remove('flashing');
+  void el.offsetWidth;
+  el.classList.add('flashing');
+  setTimeout(()=>el.classList.remove('flashing'),550);
+}
+
+function shake(el){
+  el.classList.remove('shaking');
+  void el.offsetWidth;
+  el.classList.add('shaking');
+  setTimeout(()=>el.classList.remove('shaking'),450);
+}
+
+/* ══ SEND REQUEST ══ */
+function sendRequest(){
+  if(reqInFlight) return;
+  totalReq++;
+  const clientEl  = document.getElementById('client');
+  const cbEl      = document.getElementById('cb-wrap');
+  const serviceEl = document.getElementById('service');
+  const fallEl    = document.getElementById('fallback');
+
+  flash(clientEl);
+  addLog('lc-i', `[Client] → Request #${totalReq} sent`);
+
+  // Client → CB
+  flyPkt(clientEl, cbEl, {
+    bg:'#0c1a2e', border:'#2563eb', color:'#93c5fd',
+    label:'📤 REQ', w:72, h:24
+  }, ()=>{
+    flash(cbEl);
+
+    /* ── OPEN: block immediately ── */
+    if(cbState === 'open'){
+      blockedReq++;
+      addLog('lc-err', `[CB] ⚡ OPEN — request BLOCKED (fail-fast)`);
+      addFeed('rf-blk', `⚡ #${totalReq} blocked`);
+      // Bounce back with error
+      flyPkt(cbEl, clientEl, {
+        bg:'#1c0505', border:'#991b1b', color:'#fca5a5',
+        label:'✗ CB OPEN', w:82, h:24
+      }, ()=>{
+        shake(clientEl);
+        // Serve from fallback
+        setTimeout(()=>{
+          flyPkt(cbEl, fallEl, {
+            bg:'#1c1004', border:'#92400e', color:'#fcd34d',
+            label:'🛡️ fallback', w:88, h:24
+          }, ()=>{
+            flash(fallEl);
+            addLog('lc-cb', `[CB] Serving cached/fallback response`);
+          });
+        }, d(150));
+        reqInFlight = false;
+        updateStats();
+      });
+      return;
+    }
+
+    /* ── HALF-OPEN: probe request ── */
+    if(cbState === 'half'){
+      halfProbeCount++;
+      addLog('lc-h', `[CB] HALF-OPEN — probe request #${halfProbeCount} forwarded`);
+    }
+
+    reqInFlight = true;
+    /* Forward to service */
+    flyPkt(cbEl, serviceEl, {
+      bg:'#0a1628', border:'#0ea5e9', color:'#7dd3fc',
+      label:'→ forward', w:80, h:24
+    }, ()=>{
+      updateServiceVisual();
+      const success = Math.random() * 100 < SVC_HEALTH;
+
+      setTimeout(()=>{
+        if(success){
+          /* ── SUCCESS ── */
+          okReq++;
+          addLog('lc-ok', `[Service] ✓ 200 OK`);
+          addFeed('rf-ok', `✓ #${totalReq} ok`);
+          flash(serviceEl);
+
+          flyPkt(serviceEl, cbEl, {
+            bg:'#0d1f0d', border:'#16a34a', color:'#86efac',
+            label:'✓ 200 OK', w:72, h:24
+          }, ()=>{
+            flash(cbEl);
+            if(cbState==='half'){
+              successCount++;
+              updateGauges();
+              addLog('lc-h', `[CB] Probe success (${successCount}/${HALF_OPEN_SUCCESS})`);
+              if(successCount >= HALF_OPEN_SUCCESS){
+                transitionClosed();
+              }
+            } else {
+              if(failCount > 0){ failCount = Math.max(0, failCount-1); updateGauges(); }
+            }
+            flyPkt(cbEl, clientEl, {
+              bg:'#0d1f0d', border:'#16a34a', color:'#86efac',
+              label:'✓ 200 OK', w:72, h:24
+            }, ()=>{
+              reqInFlight = false;
+              updateStats();
+            });
+          });
+
+        } else {
+          /* ── FAILURE ── */
+          failReq++;
+          addLog('lc-err', `[Service] ✗ 500 Error (health: ${SVC_HEALTH}%)`);
+          addFeed('rf-err', `✗ #${totalReq} fail`);
+          shake(serviceEl);
+
+          flyPkt(serviceEl, cbEl, {
+            bg:'#1c0505', border:'#991b1b', color:'#fca5a5',
+            label:'✗ 500', w:62, h:24
+          }, ()=>{
+            shake(cbEl);
+            if(cbState==='half'){
+              addLog('lc-err', `[CB] Probe FAILED — re-opening circuit`);
+              successCount = 0;
+              failCount = FAIL_THRESHOLD;
+              tripOpen();
+            } else if(cbState==='closed'){
+              failCount++;
+              updateGauges();
+              addLog('lc-err', `[CB] Failure recorded (${failCount}/${FAIL_THRESHOLD})`);
+              if(failCount >= FAIL_THRESHOLD){
+                tripOpen();
+              }
+            }
+            flyPkt(cbEl, clientEl, {
+              bg:'#1c0505', border:'#991b1b', color:'#fca5a5',
+              label:'✗ error', w:68, h:24
+            }, ()=>{
+              shake(clientEl);
+              reqInFlight = false;
+              updateStats();
+            });
+          });
+        }
+      }, d(400 + Math.random()*300));
+    });
+  });
+  updateStats();
+}
+
+/* ══ FORCE FAILURES ══ */
+function forceFailures(){
+  const prevHealth = SVC_HEALTH;
+  SVC_HEALTH = 0;
+  updateServiceVisual();
+  let count = 0;
+  const interval = setInterval(()=>{
+    if(count >= FAIL_THRESHOLD){ clearInterval(interval); SVC_HEALTH=prevHealth; updateServiceVisual(); return; }
+    if(!reqInFlight){ sendRequest(); count++; }
+  }, d(900));
+}
+
+/* ══ PROBE (HALF-OPEN) ══ */
+function halfOpenProbe(){
+  if(cbState !== 'open' && cbState !== 'half'){
+    addLog('lc-cb', '[CB] Circuit is closed — probe not needed');
+    return;
+  }
+  if(cbState==='open') transitionHalf();
+  setTimeout(()=> sendRequest(), d(200));
+}
+
+/* ══ HEAL SERVICE ══ */
+function healService(){
+  SVC_HEALTH = 100;
+  document.querySelector('input[oninput*="SVC_HEALTH"]').value=100;
+  document.getElementById('cfg-sh').textContent='100%';
+  updateServiceVisual();
+  addLog('lc-ok','[Service] 💊 Service healed — health restored to 100%');
+  if(cbState==='open') transitionHalf();
+}
+
+/* ══ AUTO DEMO ══ */
+function toggleAuto(){
+  const btn = document.getElementById('auto-btn');
+  if(autoTimer){
+    clearInterval(autoTimer); autoTimer=null;
+    btn.textContent='▶ Auto Demo'; btn.classList.remove('active');
+  } else {
+    btn.textContent='⏹ Stop'; btn.classList.add('active');
+    let tick=0;
+    autoTimer = setInterval(()=>{
+      // Simulate varying health over time
+      if(tick===8)  { SVC_HEALTH=20; document.querySelector('input[oninput*="SVC_HEALTH"]').value=20; document.getElementById('cfg-sh').textContent='20%'; updateServiceVisual(); addLog('lc-err','[Demo] Service degrading…'); }
+      if(tick===18) { healService(); }
+      if(!reqInFlight) sendRequest();
+      tick++;
+    }, d(1500));
+  }
+}
+
+/* ══ RESET ══ */
+function resetAll(){
+  if(openTimer){ clearTimeout(openTimer); openTimer=null; }
+  if(autoTimer){ clearInterval(autoTimer); autoTimer=null; document.getElementById('auto-btn').textContent='▶ Auto Demo'; document.getElementById('auto-btn').classList.remove('active'); }
+  cbState='closed'; failCount=0; successCount=0; halfProbeCount=0;
+  totalReq=0; okReq=0; failReq=0; blockedReq=0; reqInFlight=false;
+  SVC_HEALTH=100;
+  document.querySelector('input[oninput*="SVC_HEALTH"]').value=100;
+  document.getElementById('cfg-sh').textContent='100%';
+  setCBVisual('closed'); highlightSM('closed');
+  updateGauges(); updateStats(); updateServiceVisual();
+  document.getElementById('fallback').classList.remove('active');
+  document.getElementById('cb-timer').innerHTML='';
+  document.getElementById('req-feed').innerHTML='';
+  document.getElementById('log').innerHTML='';
+  addLog('lc-i','[System] Circuit Breaker reset — state: CLOSED');
+}
+
+/* ══ INIT ══ */
+setCBVisual('closed');
+highlightSM('closed');
+updateGauges();
+updateStats();
+updateServiceVisual();
+addLog('lc-i','[System] Circuit Breaker ready — state: CLOSED');
+addLog('lc-i','[System] Send requests or click ▶ Auto Demo to begin');
+</script>
+</body>
+</html>
