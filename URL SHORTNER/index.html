@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>URL Shortener — System Design</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: #0d1117;
+  color: #e2e8f0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 16px 30px;
+}
+
+h1 { font-size: 22px; font-weight: 700; color: #f1f5f9; margin-bottom: 3px; }
+.subtitle { font-size: 11px; color: #475569; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 16px; }
+
+/* ═══ STATS ══════════════════════════════════ */
+.stats-bar {
+  display: flex; gap: 12px; justify-content: center;
+  margin-bottom: 14px; flex-wrap: wrap;
+}
+.stat-pill {
+  background: #111827; border: 1px solid #1e293b;
+  border-radius: 8px; padding: 5px 14px;
+  font-size: 11px; color: #64748b;
+  display: flex; align-items: center; gap: 6px;
+}
+.stat-pill b { font-size: 14px; font-weight: 700; color: #e2e8f0; }
+
+/* ═══ LAYOUT ═════════════════════════════════ */
+.layout {
+  display: flex;
+  gap: 0;
+  width: 1100px;
+  align-items: flex-start;
+}
+
+/* ═══ PANELS ═════════════════════════════════ */
+.panel {
+  background: #111827;
+  border: 1.5px solid #1e293b;
+  border-radius: 14px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.panel-hdr {
+  padding: 8px 14px 7px;
+  font-size: 10px; font-weight: 700;
+  letter-spacing: .07em; text-transform: uppercase;
+  border-bottom: 1px solid #1e293b;
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+}
+.panel-body { padding: 10px 12px; }
+
+/* ═══ CENTER FLOW COLUMN ═════════════════════ */
+.flow-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 12px;
+}
+
+/* ═══ BROWSER / CLIENT ══════════════════════ */
+.browser {
+  background: #0f1923;
+  border: 1.5px solid #1e3a5f;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.browser-bar {
+  background: #1a2a3a;
+  padding: 6px 10px;
+  display: flex; align-items: center; gap: 6px;
+}
+.b-dots { display: flex; gap: 4px; }
+.b-dot  { width: 8px; height: 8px; border-radius: 50%; }
+.b-url-box {
+  flex: 1; background: #0d1a28;
+  border: 1px solid #1e3a5f;
+  border-radius: 6px; padding: 4px 10px;
+  font-family: monospace; font-size: 11px;
+  color: #60a5fa; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.browser-body {
+  padding: 10px 12px 12px;
+}
+
+/* URL Input */
+.url-input-row {
+  display: flex; gap: 8px; margin-bottom: 10px;
+}
+.url-input {
+  flex: 1; background: #0d1a28;
+  border: 1.5px solid #1e3a5f; border-radius: 8px;
+  padding: 8px 12px; font-size: 12px; color: #e2e8f0;
+  font-family: monospace;
+  outline: none;
+  transition: border-color .2s;
+}
+.url-input:focus { border-color: #2563eb; }
+.shorten-btn {
+  background: #1d4ed8; color: #fff;
+  border: none; border-radius: 8px;
+  padding: 8px 16px; font-size: 12px; font-weight: 700;
+  cursor: pointer; white-space: nowrap;
+  transition: background .15s;
+}
+.shorten-btn:hover { background: #2563eb; }
+
+/* Shortened result */
+.result-box {
+  background: #061209;
+  border: 1px solid #14532d;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-family: monospace; font-size: 13px;
+  color: #4ade80;
+  display: flex; align-items: center; justify-content: space-between;
+  min-height: 36px;
+  transition: all .3s;
+}
+.result-placeholder { color: #1e3a5f; font-size: 11px; }
+.copy-btn {
+  font-size: 10px; padding: 2px 8px; border-radius: 5px;
+  border: 1px solid #14532d; background: #0d2710; color: #4ade80;
+  cursor: pointer;
+}
+
+/* Short URL history */
+.history-row {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10px; padding: 4px 0;
+  border-bottom: 1px solid #1a2332;
+  cursor: pointer;
+  transition: background .15s;
+  border-radius: 4px; padding: 4px 4px;
+}
+.history-row:hover { background: #1a2332; }
+.hr-short { color: #60a5fa; font-family: monospace; flex-shrink: 0; }
+.hr-arrow { color: #334155; flex-shrink: 0; }
+.hr-long  { color: #475569; font-family: monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.hr-clicks{ color: #fbbf24; font-size: 9px; flex-shrink: 0; margin-left: 4px; }
+@keyframes row-in { from { opacity:0; transform:translateY(-4px); } to { opacity:1; } }
+.history-row.new { animation: row-in .3s ease; }
+
+/* ═══ PIPELINE STEP ══════════════════════════ */
+.pipe-steps {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.pipe-step {
+  background: #0d1117;
+  border: 1.5px solid #1e293b;
+  border-radius: 10px;
+  padding: 8px 12px;
+  display: flex; align-items: center; gap: 10px;
+  transition: border-color .3s, background .3s;
+  position: relative;
+  overflow: hidden;
+}
+.pipe-step.lit {
+  border-color: #7c3aed;
+  background: #130d1f;
+}
+.pipe-step.lit-ok {
+  border-color: #16a34a;
+  background: #061209;
+}
+.pipe-step.lit-cache {
+  border-color: #d97706;
+  background: #150d02;
+}
+.pipe-step::after {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: transparent;
+  transition: background .3s;
+  border-radius: 10px 0 0 10px;
+}
+.pipe-step.lit::after   { background: #7c3aed; }
+.pipe-step.lit-ok::after{ background: #16a34a; }
+.pipe-step.lit-cache::after { background: #d97706; }
+
+.ps-icon { font-size: 18px; flex-shrink: 0; }
+.ps-body { flex: 1; }
+.ps-name { font-size: 11px; font-weight: 700; color: #94a3b8; }
+.ps-desc { font-size: 9px; color: #334155; margin-top: 1px; }
+.ps-badge {
+  font-size: 9px; font-weight: 700; padding: 2px 7px;
+  border-radius: 5px; flex-shrink: 0; opacity: 0;
+  transition: opacity .3s;
+}
+.pipe-step.lit .ps-badge,
+.pipe-step.lit-ok .ps-badge,
+.pipe-step.lit-cache .ps-badge { opacity: 1; }
+
+/* ═══ CACHE PANEL ════════════════════════════ */
+.cache-panel { width: 200px; }
+.cache-item {
+  background: #0d1117;
+  border: 1px solid #1e293b;
+  border-radius: 6px;
+  padding: 5px 8px;
+  margin-bottom: 4px;
+  font-family: monospace; font-size: 10px;
+  display: flex; gap: 6px; align-items: center;
+  transition: border-color .3s;
+}
+.cache-item.hit { border-color: #d97706; background: #150d02; }
+.ci-key  { color: #60a5fa; flex-shrink: 0; }
+.ci-val  { color: #475569; overflow: hidden; text-overflow: ellipsis; flex: 1; white-space: nowrap; }
+.ci-ttl  { color: #334155; font-size: 8px; flex-shrink: 0; }
+@keyframes cache-in { from { opacity:0; transform:scale(.96); } to { opacity:1; } }
+.cache-item.new-item { animation: cache-in .3s ease; }
+
+/* ═══ DB PANEL ═══════════════════════════════ */
+.db-panel { width: 200px; }
+.db-row {
+  display: flex; gap: 0;
+  border-bottom: 1px solid #1a2332;
+  font-family: monospace; font-size: 9px;
+  padding: 4px 0;
+}
+.db-row.hdr { font-size: 8px; color: #334155; font-weight: 700; letter-spacing: .05em; }
+.db-col { padding: 0 5px; }
+.db-col-key  { width: 55px; color: #60a5fa; flex-shrink: 0; }
+.db-col-url  { flex: 1; color: #475569; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-col-cnt  { width: 36px; color: #fbbf24; text-align: right; flex-shrink: 0; }
+@keyframes db-in { from { opacity:0; background:#172554; } to { opacity:1; background:transparent; } }
+.db-row.new-row { animation: db-in .6s ease; }
+
+/* ═══ ANALYTICS PANEL ═══════════════════════ */
+.analytics-panel { width: 200px; }
+.chart-bar-wrap { display: flex; flex-direction: column; gap: 4px; }
+.chart-bar-row {
+  display: flex; align-items: center; gap: 6px; font-size: 9px;
+}
+.cb-label { color: #475569; width: 55px; text-align: right; flex-shrink: 0; font-family: monospace; overflow: hidden; text-overflow: ellipsis; }
+.cb-track { flex: 1; height: 8px; background: #1e293b; border-radius: 4px; overflow: hidden; }
+.cb-fill  { height: 100%; border-radius: 4px; transition: width .5s ease; }
+.cb-count { color: #94a3b8; width: 22px; text-align: right; flex-shrink: 0; }
+
+/* ═══ MOVING PACKETS ════════════════════════ */
+.pkt {
+  position: fixed;
+  pointer-events: none;
+  z-index: 200;
+  border-radius: 8px;
+  font-size: 10px; font-weight: 700;
+  display: flex; align-items: center; gap: 4px;
+  padding: 3px 10px;
+  white-space: nowrap;
+  border: 1.5px solid rgba(255,255,255,.15);
+  box-shadow: 0 2px 14px rgba(0,0,0,.5);
+}
+
+/* Flash */
+@keyframes flash-anim {
+  0%   { box-shadow: 0 0 0 0 rgba(99,102,241,.8); }
+  70%  { box-shadow: 0 0 0 12px rgba(99,102,241,0); }
+  100% { box-shadow: 0 0 0 0 rgba(99,102,241,0); }
+}
+.flashing { animation: flash-anim .5s ease-out; }
+
+/* ═══ LOG ════════════════════════════════════ */
+.log-wrap {
+  width: 1100px; margin: 12px auto 0;
+  background: #0a0d14; border: 1px solid #1e293b;
+  border-radius: 10px; overflow: hidden;
+}
+.log-hdr {
+  padding: 7px 14px; font-size: 10px; font-weight: 700;
+  color: #334155; border-bottom: 1px solid #1e293b;
+  letter-spacing: .07em; text-transform: uppercase;
+  display: flex; justify-content: space-between;
+}
+.log-body {
+  height: 72px; overflow-y: auto; padding: 5px 14px;
+  font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.7;
+}
+@keyframes li { from { opacity:0; transform:translateY(3px); } to { opacity:1; } }
+.le { animation: li .2s ease; }
+.lc { color: #60a5fa; }
+.lg { color: #a78bfa; }
+.ls { color: #34d399; }
+.lw { color: #fbbf24; }
+.le-r{ color: #f87171; }
+
+/* ═══ CONTROLS ══════════════════════════════ */
+.controls {
+  display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 12px 0 0;
+}
+.btn {
+  font-size: 12px; font-weight: 600; padding: 7px 15px;
+  border-radius: 8px; border: 1px solid #1e293b;
+  background: #111827; color: #e2e8f0;
+  cursor: pointer; transition: background .15s;
+}
+.btn:hover  { background: #1e293b; }
+.btn.active { background: #172554; border-color: #2563eb; color: #93c5fd; }
+
+.speed-row {
+  display: flex; align-items: center; gap: 8px; justify-content: center;
+  margin: 8px 0 0; font-size: 11px; color: #475569;
+}
+input[type=range] { width: 80px; accent-color: #7c3aed; }
+</style>
+</head>
+<body>
+
+<h1>URL Shortener</h1>
+<div class="subtitle">System Design — Interactive Animation</div>
+
+<div class="stats-bar">
+  <div class="stat-pill">URLs Created <b id="st-created">0</b></div>
+  <div class="stat-pill">Redirects <b id="st-redirects">0</b></div>
+  <div class="stat-pill" style="border-color:#451a03">Cache Hits <b id="st-chits" style="color:#fb923c">0</b></div>
+  <div class="stat-pill" style="border-color:#172554">DB Lookups <b id="st-dblook" style="color:#60a5fa">0</b></div>
+  <div class="stat-pill">Total Clicks <b id="st-clicks">0</b></div>
+  <div class="stat-pill">Unique URLs <b id="st-unique">0</b></div>
+</div>
+
+<div class="layout" id="main-layout">
+
+  <!-- ══ LEFT: BROWSER ══ -->
+  <div style="width:280px;display:flex;flex-direction:column;gap:10px;">
+
+    <!-- Browser window -->
+    <div class="browser">
+      <div class="browser-bar">
+        <div class="b-dots">
+          <div class="b-dot" style="background:#f87171"></div>
+          <div class="b-dot" style="background:#fbbf24"></div>
+          <div class="b-dot" style="background:#4ade80"></div>
+        </div>
+        <div class="b-url-box" id="browser-url">https://short.ly/</div>
+      </div>
+      <div class="browser-body">
+        <div style="font-size:10px;color:#334155;margin-bottom:6px;font-weight:700;">SHORTEN A URL</div>
+        <div class="url-input-row">
+          <input class="url-input" id="url-input" type="text" placeholder="https://very-long-url.com/path?q=example" value="https://www.google.com/search?q=system+design+interview">
+        </div>
+        <button class="shorten-btn" id="shorten-btn" onclick="shortenURL()" style="width:100%;margin-bottom:10px;">✂️ Shorten URL</button>
+
+        <div style="font-size:10px;color:#334155;margin-bottom:5px;font-weight:700;">RESULT</div>
+        <div class="result-box" id="result-box">
+          <span class="result-placeholder" id="result-placeholder">shortened URL will appear here…</span>
+          <span id="result-url" style="display:none;"></span>
+          <button class="copy-btn" id="copy-btn" style="display:none;" onclick="copyShort()">copy</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- History / My URLs -->
+    <div class="panel" style="max-height:220px;">
+      <div class="panel-hdr" style="color:#60a5fa;">
+        <span>🔗 My Short URLs</span>
+        <span id="hist-count" style="background:#172554;color:#93c5fd;font-size:9px;padding:1px 7px;border-radius:5px;">0</span>
+      </div>
+      <div class="panel-body" id="history-list" style="max-height:168px;overflow-y:auto;padding:6px 8px;">
+        <div style="font-size:10px;color:#1e3a5f;text-align:center;padding:10px;">No URLs yet</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ══ CENTER: PIPELINE ══ -->
+  <div class="flow-col">
+
+    <!-- Shorten flow title -->
+    <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#334155;text-align:center;">⬇ Shorten Flow</div>
+
+    <div class="pipe-steps" id="shorten-pipeline">
+      <div class="pipe-step" id="ps-0">
+        <div class="ps-icon">📥</div>
+        <div class="ps-body"><div class="ps-name">Receive Request</div><div class="ps-desc">POST /shorten {longUrl}</div></div>
+        <div class="ps-badge" style="background:#1a0c2e;color:#c4b5fd;">API</div>
+      </div>
+      <div class="pipe-step" id="ps-1">
+        <div class="ps-icon">✅</div>
+        <div class="ps-body"><div class="ps-name">Validate URL</div><div class="ps-desc">format, blocklist, length check</div></div>
+        <div class="ps-badge" style="background:#061209;color:#4ade80;">OK</div>
+      </div>
+      <div class="pipe-step" id="ps-2">
+        <div class="ps-icon">🔍</div>
+        <div class="ps-body"><div class="ps-name">Check Duplicate</div><div class="ps-desc">hash lookup in DB</div></div>
+        <div class="ps-badge" style="background:#172554;color:#60a5fa;">UNIQUE</div>
+      </div>
+      <div class="pipe-step" id="ps-3">
+        <div class="ps-icon">🔢</div>
+        <div class="ps-body"><div class="ps-name">Generate Short Code</div><div class="ps-desc">Base62 encode(counter/hash)</div></div>
+        <div class="ps-badge" id="ps-3-badge" style="background:#1a0c2e;color:#c4b5fd;">—</div>
+      </div>
+      <div class="pipe-step" id="ps-4">
+        <div class="ps-icon">💾</div>
+        <div class="ps-body"><div class="ps-name">Persist to DB</div><div class="ps-desc">shortCode → longUrl + metadata</div></div>
+        <div class="ps-badge" style="background:#061209;color:#4ade80;">SAVED</div>
+      </div>
+      <div class="pipe-step" id="ps-5">
+        <div class="ps-icon">⚡</div>
+        <div class="ps-body"><div class="ps-name">Write to Cache</div><div class="ps-desc">TTL=24h, LRU eviction</div></div>
+        <div class="ps-badge" style="background:#150d02;color:#fcd34d;">CACHED</div>
+      </div>
+      <div class="pipe-step" id="ps-6">
+        <div class="ps-icon">📤</div>
+        <div class="ps-body"><div class="ps-name">Return Short URL</div><div class="ps-desc">https://short.ly/{code}</div></div>
+        <div class="ps-badge" style="background:#061209;color:#4ade80;">201</div>
+      </div>
+    </div>
+
+    <div style="height:1px;background:#1e293b;margin:2px 0;"></div>
+
+    <!-- Redirect flow title -->
+    <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#334155;text-align:center;">⬇ Redirect Flow</div>
+
+    <div class="pipe-steps" id="redirect-pipeline">
+      <div class="pipe-step" id="rp-0">
+        <div class="ps-icon">🌐</div>
+        <div class="ps-body"><div class="ps-name">Receive Redirect</div><div class="ps-desc">GET /{shortCode}</div></div>
+        <div class="ps-badge" style="background:#1a0c2e;color:#c4b5fd;">GET</div>
+      </div>
+      <div class="pipe-step" id="rp-1">
+        <div class="ps-icon">⚡</div>
+        <div class="ps-body"><div class="ps-name">Cache Lookup</div><div class="ps-desc">Redis / Memcached</div></div>
+        <div class="ps-badge" id="rp-1-badge" style="background:#150d02;color:#fcd34d;">HIT</div>
+      </div>
+      <div class="pipe-step" id="rp-2">
+        <div class="ps-icon">🗄️</div>
+        <div class="ps-body"><div class="ps-name">DB Lookup (fallback)</div><div class="ps-desc">query by shortCode</div></div>
+        <div class="ps-badge" style="background:#172554;color:#60a5fa;">FOUND</div>
+      </div>
+      <div class="pipe-step" id="rp-3">
+        <div class="ps-icon">📊</div>
+        <div class="ps-body"><div class="ps-name">Log Analytics</div><div class="ps-desc">timestamp, IP, user-agent</div></div>
+        <div class="ps-badge" style="background:#150d02;color:#fcd34d;">ASYNC</div>
+      </div>
+      <div class="pipe-step" id="rp-4">
+        <div class="ps-icon">↩️</div>
+        <div class="ps-body"><div class="ps-name">301 / 302 Redirect</div><div class="ps-desc">Location: longUrl header</div></div>
+        <div class="ps-badge" style="background:#061209;color:#4ade80;">302</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ══ RIGHT: STORAGE ══ -->
+  <div style="width:200px;display:flex;flex-direction:column;gap:10px;">
+
+    <!-- Cache -->
+    <div class="panel cache-panel">
+      <div class="panel-hdr" style="color:#fbbf24;background:#1c1004;">
+        <span>⚡ Cache (Redis)</span>
+        <span id="cache-count" style="font-size:9px;color:#78350f;">0/8</span>
+      </div>
+      <div class="panel-body" id="cache-body" style="padding:6px 8px;max-height:160px;overflow-y:auto;">
+        <div style="font-size:10px;color:#1e293b;text-align:center;padding:8px;">empty</div>
+      </div>
+    </div>
+
+    <!-- DB -->
+    <div class="panel db-panel">
+      <div class="panel-hdr" style="color:#60a5fa;background:#0f1f38;">
+        <span>🗄️ Database</span>
+        <span id="db-count" style="font-size:9px;color:#1e3a5f;">0 rows</span>
+      </div>
+      <div class="panel-body" style="padding:4px 6px;max-height:170px;overflow-y:auto;">
+        <div class="db-row hdr">
+          <div class="db-col db-col-key">code</div>
+          <div class="db-col db-col-url">long url</div>
+          <div class="db-col db-col-cnt">hits</div>
+        </div>
+        <div id="db-body"></div>
+      </div>
+    </div>
+
+    <!-- Analytics -->
+    <div class="panel analytics-panel">
+      <div class="panel-hdr" style="color:#a78bfa;background:#1a0c2e;">
+        <span>📊 Analytics</span>
+      </div>
+      <div class="panel-body" style="padding:8px 10px;">
+        <div style="font-size:9px;color:#334155;margin-bottom:6px;">Top URLs by clicks</div>
+        <div class="chart-bar-wrap" id="analytics-chart">
+          <div style="font-size:10px;color:#1e293b;text-align:center;padding:8px;">no data yet</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- LOG -->
+<div class="log-wrap">
+  <div class="log-hdr">
+    <span>System Log</span>
+    <span style="color:#1e293b">Base62 encoding · Cache-first lookup · 302 redirect</span>
+  </div>
+  <div class="log-body" id="log"></div>
+</div>
+
+<!-- CONTROLS -->
+<div class="controls">
+  <button class="btn" onclick="shortenURL()">✂️ Shorten URL</button>
+  <button class="btn" onclick="redirectDemo()">↩️ Simulate Click</button>
+  <button class="btn" onclick="simulateCacheMiss()">💾 Force Cache Miss</button>
+  <button class="btn" onclick="bulkShorten()">⚡ Bulk Shorten (5)</button>
+  <button class="btn" id="auto-btn" onclick="toggleAuto()">▶ Auto Demo</button>
+  <button class="btn" onclick="resetAll()" style="color:#475569;">↺ Reset</button>
+</div>
+<div class="speed-row">
+  Speed <input type="range" min="0.3" max="3" step="0.1" value="1" oninput="spd=parseFloat(this.value)">
+</div>
+
+<script>
+let spd = 1, autoTimer = null;
+let urlsCreated=0, redirectCount=0, cacheHits=0, dbLookups=0, totalClicks=0;
+
+/* ══ DB + CACHE stores ══ */
+const dbStore    = {}; // shortCode → { longUrl, clicks, createdAt }
+const cacheStore = {}; // shortCode → longUrl
+const cacheOrder = []; // LRU order
+const CACHE_MAX  = 8;
+
+/* ══ Counter for Base62 ══ */
+let counter = 100000;
+
+const CHARSET = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+function base62(n){
+  let s='';
+  while(n>0){ s=CHARSET[n%62]+s; n=Math.floor(n/62); }
+  return s.padStart(6,'a');
+}
+
+/* ══ SAMPLE URLS ══ */
+const SAMPLE_URLS = [
+  'https://www.google.com/search?q=system+design+interview',
+  'https://github.com/donnemartin/system-design-primer',
+  'https://leetcode.com/problems/design-tinyurl/description/',
+  'https://aws.amazon.com/blogs/architecture/url-shortening-service/',
+  'https://www.youtube.com/watch?v=JQDHz72OA3c&ab_channel=ByteByteGo',
+  'https://en.wikipedia.org/wiki/URL_shortening',
+  'https://stripe.com/docs/api/payment_intents/create',
+  'https://www.cloudflare.com/learning/dns/what-is-dns/',
+];
+let sampleIdx = 0;
+
+function d(ms){ return ms/spd; }
+
+/* ══ LOGGING ══ */
+function addLog(cls, msg){
+  const ts = new Date().toLocaleTimeString('en-GB',{hour12:false});
+  const el = document.createElement('div');
+  el.className='le';
+  el.innerHTML=`<span style="color:#1e293b">${ts}</span> <span class="${cls}">${msg}</span>`;
+  const lb=document.getElementById('log');
+  lb.appendChild(el); lb.scrollTop=lb.scrollHeight;
+  if(lb.children.length>80) lb.removeChild(lb.firstChild);
+}
+
+/* ══ STATS ══ */
+function updateStats(){
+  document.getElementById('st-created').textContent   = urlsCreated;
+  document.getElementById('st-redirects').textContent = redirectCount;
+  document.getElementById('st-chits').textContent     = cacheHits;
+  document.getElementById('st-dblook').textContent    = dbLookups;
+  document.getElementById('st-clicks').textContent    = totalClicks;
+  document.getElementById('st-unique').textContent    = Object.keys(dbStore).length;
+  document.getElementById('cache-count').textContent  = cacheOrder.length+'/'+CACHE_MAX;
+  document.getElementById('db-count').textContent     = Object.keys(dbStore).length+' rows';
+  document.getElementById('hist-count').textContent   = urlsCreated;
+}
+
+/* ══ PIPELINE HELPERS ══ */
+let pipeTimers = [];
+function clearPipe(){
+  pipeTimers.forEach(t=>clearTimeout(t));
+  pipeTimers=[];
+  const steps=['ps-0','ps-1','ps-2','ps-3','ps-4','ps-5','ps-6','rp-0','rp-1','rp-2','rp-3','rp-4'];
+  steps.forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.className='pipe-step';
+  });
+}
+
+function lightStep(id, cls, delay){
+  const t=setTimeout(()=>{
+    const el=document.getElementById(id);
+    if(el){ el.classList.add(cls||'lit'); }
+  }, d(delay));
+  pipeTimers.push(t);
+}
+
+function dimStep(id, delay){
+  const t=setTimeout(()=>{
+    const el=document.getElementById(id);
+    if(el) el.className='pipe-step';
+  }, d(delay));
+  pipeTimers.push(t);
+}
+
+/* ══ PACKET ANIMATION ══ */
+function flyPkt(fromEl, toEl, opts, onDone){
+  if(!fromEl||!toEl) return;
+  const fr=fromEl.getBoundingClientRect(), to=toEl.getBoundingClientRect();
+  const fx=fr.left+fr.width/2, fy=fr.top+fr.height/2;
+  const tx=to.left+to.width/2, ty=to.top+to.height/2;
+  const pkt=document.createElement('div');
+  pkt.className='pkt';
+  const w=opts.w||80, h=opts.h||24;
+  pkt.style.cssText=`background:${opts.bg};border-color:${opts.border};color:${opts.color};width:${w}px;height:${h}px;left:${fx-w/2}px;top:${fy-h/2}px;opacity:1;`;
+  pkt.innerHTML=opts.label;
+  document.body.appendChild(pkt);
+  const dist=Math.hypot(tx-fx,ty-fy);
+  const dur=Math.max(250, dist/(180*spd)*1000);
+  pkt.animate([
+    {left:(fx-w/2)+'px',top:(fy-h/2)+'px',opacity:1},
+    {left:(tx-w/2)+'px',top:(ty-h/2)+'px',opacity:1}
+  ],{duration:dur,easing:'cubic-bezier(.4,0,.2,1)',fill:'forwards'})
+  .finished.then(()=>{ pkt.remove(); if(onDone) onDone(); });
+}
+
+function flash(el){
+  if(!el) return;
+  el.classList.remove('flashing'); void el.offsetWidth;
+  el.classList.add('flashing'); setTimeout(()=>el.classList.remove('flashing'),550);
+}
+
+/* ══ CACHE OPERATIONS ══ */
+function cacheWrite(code, longUrl){
+  if(cacheOrder.length >= CACHE_MAX){
+    const evict=cacheOrder.shift();
+    delete cacheStore[evict];
+    const evEl=document.getElementById('ci-'+evict);
+    if(evEl) evEl.remove();
+    addLog('lw',`[Cache] LRU evict: ${evict}`);
+  }
+  cacheStore[code]=longUrl;
+  cacheOrder.push(code);
+  renderCacheItem(code, longUrl, true);
+}
+
+function cacheRead(code){
+  const idx=cacheOrder.indexOf(code);
+  if(idx===-1) return null;
+  // LRU: move to end
+  cacheOrder.splice(idx,1); cacheOrder.push(code);
+  const el=document.getElementById('ci-'+code);
+  if(el){ el.classList.add('hit'); setTimeout(()=>el&&el.classList.remove('hit'),800); }
+  return cacheStore[code];
+}
+
+function renderCacheItem(code, longUrl, isNew){
+  const body=document.getElementById('cache-body');
+  const empty=body.querySelector('[style*="empty"]');
+  if(empty) empty.remove();
+
+  const existing=document.getElementById('ci-'+code);
+  if(existing){ existing.classList.add('hit'); return; }
+
+  const item=document.createElement('div');
+  item.className='cache-item'+(isNew?' new-item':'');
+  item.id='ci-'+code;
+  const short=longUrl.length>22?longUrl.substring(0,22)+'…':longUrl;
+  item.innerHTML=`<span class="ci-key">${code}</span><span class="ci-val">${short}</span><span class="ci-ttl">24h</span>`;
+  body.insertBefore(item, body.firstChild);
+  if(isNew) setTimeout(()=>item.classList.remove('new-item'),400);
+}
+
+/* ══ DB OPERATIONS ══ */
+function dbWrite(code, longUrl){
+  dbStore[code]={ longUrl, clicks:0, createdAt: new Date().toLocaleTimeString('en-GB',{hour12:false}) };
+  renderDbRow(code, true);
+}
+
+function dbIncClicks(code){
+  if(dbStore[code]) dbStore[code].clicks++;
+  const el=document.getElementById('dbr-'+code);
+  if(el){
+    const cnt=el.querySelector('.db-col-cnt');
+    if(cnt) cnt.textContent=dbStore[code].clicks;
+  }
+}
+
+function renderDbRow(code, isNew){
+  const body=document.getElementById('db-body');
+  const existing=document.getElementById('dbr-'+code);
+  if(existing) return;
+  const row=document.createElement('div');
+  row.className='db-row'+(isNew?' new-row':'');
+  row.id='dbr-'+code;
+  const url=dbStore[code].longUrl;
+  const short=url.replace(/^https?:\/\//,'').substring(0,20)+'…';
+  row.innerHTML=`<div class="db-col db-col-key">${code}</div><div class="db-col db-col-url">${short}</div><div class="db-col db-col-cnt">0</div>`;
+  body.insertBefore(row, body.firstChild);
+  if(isNew) setTimeout(()=>row.classList.remove('new-row'),800);
+}
+
+/* ══ HISTORY ══ */
+function addHistory(code, longUrl){
+  const list=document.getElementById('history-list');
+  const empty=list.querySelector('[style*="No URLs"]');
+  if(empty) empty.remove();
+  const row=document.createElement('div');
+  row.className='history-row new';
+  row.onclick=()=>triggerRedirect(code);
+  const short='short.ly/'+code;
+  const display=longUrl.replace(/^https?:\/\//,'').substring(0,28)+(longUrl.length>32?'…':'');
+  row.innerHTML=`<span class="hr-short">${code}</span><span class="hr-arrow">→</span><span class="hr-long">${display}</span><span class="hr-clicks">0 clicks</span>`;
+  row.id='hr-'+code;
+  list.insertBefore(row, list.firstChild);
+  setTimeout(()=>row.classList.remove('new'),400);
+}
+
+function updateHistoryClicks(code){
+  const row=document.getElementById('hr-'+code);
+  if(row){
+    const clk=row.querySelector('.hr-clicks');
+    if(clk) clk.textContent=dbStore[code].clicks+' clicks';
+  }
+}
+
+/* ══ ANALYTICS ══ */
+function updateAnalytics(){
+  const chart=document.getElementById('analytics-chart');
+  const entries=Object.entries(dbStore).sort((a,b)=>b[1].clicks-a[1].clicks).slice(0,5);
+  if(!entries.length) return;
+  const max=entries[0][1].clicks||1;
+  chart.innerHTML='';
+  const colors=['#7c3aed','#2563eb','#0891b2','#16a34a','#d97706'];
+  entries.forEach(([code,data],i)=>{
+    const pct=Math.max(4,(data.clicks/max)*100);
+    const row=document.createElement('div');
+    row.className='chart-bar-row';
+    row.innerHTML=`<div class="cb-label">${code}</div><div class="cb-track"><div class="cb-fill" style="width:${pct}%;background:${colors[i]};"></div></div><div class="cb-count">${data.clicks}</div>`;
+    chart.appendChild(row);
+  });
+}
+
+/* ══ SET RESULT ══ */
+function showResult(code){
+  const shortUrl='https://short.ly/'+code;
+  document.getElementById('result-placeholder').style.display='none';
+  const ru=document.getElementById('result-url');
+  ru.textContent=shortUrl; ru.style.display='';
+  document.getElementById('copy-btn').style.display='';
+  document.getElementById('browser-url').textContent=shortUrl;
+  document.getElementById('result-url').dataset.code=code;
+}
+
+function copyShort(){
+  const code=document.getElementById('result-url').dataset.code;
+  if(code){ navigator.clipboard?.writeText('https://short.ly/'+code).catch(()=>{}); }
+  document.getElementById('copy-btn').textContent='✓';
+  setTimeout(()=>document.getElementById('copy-btn').textContent='copy',1500);
+}
+
+/* ══ SHORTEN FLOW ══ */
+let busy=false;
+function shortenURL(){
+  if(busy) return;
+  const input=document.getElementById('url-input');
+  let longUrl=input.value.trim();
+  if(!longUrl){
+    longUrl=SAMPLE_URLS[sampleIdx%SAMPLE_URLS.length];
+    sampleIdx++;
+    input.value=longUrl;
+  }
+  if(!longUrl.startsWith('http')){ addLog('le-r','[API] Invalid URL — must start with http/https'); return; }
+
+  // Check duplicate
+  const existingCode=Object.keys(dbStore).find(c=>dbStore[c].longUrl===longUrl);
+  if(existingCode){
+    addLog('lw',`[API] Duplicate URL — returning existing: ${existingCode}`);
+    showResult(existingCode);
+    lightStep('ps-0','lit',0); lightStep('ps-1','lit-ok',200); lightStep('ps-2','lit',400);
+    setTimeout(()=>clearPipe(),d(2000));
+    return;
+  }
+
+  busy=true;
+  clearPipe();
+  counter++;
+  const code=base62(counter);
+  addLog('lc',`[Client] POST /shorten {url: "${longUrl.substring(0,40)}…"}`);
+
+  /* Animate pipeline steps */
+  lightStep('ps-0','lit',0);
+  lightStep('ps-0','lit-ok',300);
+  lightStep('ps-1','lit',350);
+  lightStep('ps-1','lit-ok',650);
+  lightStep('ps-2','lit',700);
+  lightStep('ps-2','lit-ok',1000);
+
+  pipeTimers.push(setTimeout(()=>{
+    lightStep('ps-3','lit',0);
+    document.getElementById('ps-3-badge').textContent=code;
+    addLog('lg',`[Generator] Base62(${counter}) = "${code}"`);
+  }, d(1050)));
+
+  lightStep('ps-3','lit-ok',d(1350));
+  lightStep('ps-4','lit',d(1400));
+  pipeTimers.push(setTimeout(()=>{
+    dbWrite(code, longUrl);
+    addLog('ls',`[DB] INSERT short_urls (code="${code}", url="${longUrl.substring(0,35)}…")`);
+    urlsCreated++;
+    updateStats();
+  }, d(1600)));
+  lightStep('ps-4','lit-ok',d(1800));
+  lightStep('ps-5','lit-cache',d(1850));
+  pipeTimers.push(setTimeout(()=>{
+    cacheWrite(code, longUrl);
+    addLog('lw',`[Cache] SET ${code} TTL=24h`);
+    updateStats();
+  }, d(2000)));
+  lightStep('ps-5','lit-ok',d(2200));
+  lightStep('ps-6','lit-ok',d(2250));
+  pipeTimers.push(setTimeout(()=>{
+    addHistory(code, longUrl);
+    showResult(code);
+    addLog('ls',`[API] 201 Created → https://short.ly/${code}`);
+    updateStats();
+    busy=false;
+    setTimeout(()=>clearPipe(), d(1200));
+  }, d(2400)));
+}
+
+/* ══ REDIRECT FLOW ══ */
+function triggerRedirect(code){
+  if(!code||!dbStore[code]) return;
+  redirectDemo(code);
+}
+
+function redirectDemo(code){
+  if(busy) return;
+  const codes=Object.keys(dbStore);
+  if(!codes.length){ addLog('le-r','[Client] No URLs shortened yet'); return; }
+  if(!code) code=codes[Math.floor(Math.random()*codes.length)];
+  if(!dbStore[code]) return;
+  const longUrl=dbStore[code].longUrl;
+
+  busy=true;
+  clearPipe();
+  totalClicks++;
+  addLog('lc',`[Client] GET https://short.ly/${code}`);
+  document.getElementById('browser-url').textContent='https://short.ly/'+code;
+
+  lightStep('rp-0','lit',0);
+  lightStep('rp-0','lit-ok',300);
+  lightStep('rp-1','lit',350);
+
+  const cached=cacheRead(code);
+  const isCacheHit=!!cached;
+
+  pipeTimers.push(setTimeout(()=>{
+    if(isCacheHit){
+      cacheHits++;
+      document.getElementById('rp-1-badge').textContent='HIT';
+      document.getElementById('rp-1-badge').style.color='#fcd34d';
+      lightStep('rp-1','lit-cache',0);
+      addLog('lw',`[Cache] HIT for ${code} → serving from Redis ⚡`);
+      updateStats();
+    } else {
+      document.getElementById('rp-1-badge').textContent='MISS';
+      document.getElementById('rp-1-badge').style.color='#f87171';
+      lightStep('rp-1','lit',0);
+      addLog('lw',`[Cache] MISS for ${code} → fallback to DB`);
+      lightStep('rp-2','lit',200);
+      dbLookups++;
+      pipeTimers.push(setTimeout(()=>{
+        addLog('ls',`[DB] SELECT * FROM short_urls WHERE code="${code}"`);
+        lightStep('rp-2','lit-ok',0);
+        cacheWrite(code, longUrl); // warm cache
+        addLog('lw',`[Cache] Warmed: ${code}`);
+        updateStats();
+      }, d(400)));
+    }
+  }, d(600)));
+
+  const analyticsDelay=isCacheHit?800:1400;
+  lightStep('rp-3','lit-cache',d(analyticsDelay));
+  pipeTimers.push(setTimeout(()=>{
+    dbIncClicks(code);
+    updateHistoryClicks(code);
+    updateAnalytics();
+    addLog('ls',`[Analytics] Click logged for ${code} (total: ${dbStore[code].clicks})`);
+    redirectCount++;
+    updateStats();
+  }, d(analyticsDelay+300)));
+
+  lightStep('rp-4','lit-ok',d(analyticsDelay+600));
+  pipeTimers.push(setTimeout(()=>{
+    addLog('ls',`[API] 302 Redirect → ${longUrl.substring(0,50)}…`);
+    document.getElementById('browser-url').textContent=longUrl;
+    busy=false;
+    setTimeout(()=>clearPipe(), d(1200));
+  }, d(analyticsDelay+900)));
+}
+
+/* ══ CACHE MISS SIMULATION ══ */
+function simulateCacheMiss(){
+  const codes=Object.keys(dbStore);
+  if(!codes.length){ addLog('le-r','[Test] No URLs in DB — shorten one first'); return; }
+  const code=codes[Math.floor(Math.random()*codes.length)];
+  // Remove from cache
+  const idx=cacheOrder.indexOf(code);
+  if(idx!==-1){ cacheOrder.splice(idx,1); delete cacheStore[code]; }
+  const el=document.getElementById('ci-'+code);
+  if(el) el.remove();
+  addLog('lw',`[Test] Evicted ${code} from cache — next request will be a DB lookup`);
+  redirectDemo(code);
+}
+
+/* ══ BULK SHORTEN ══ */
+function bulkShorten(){
+  let i=0;
+  const interval=setInterval(()=>{
+    if(i>=5||busy){ if(i>=5) clearInterval(interval); return; }
+    document.getElementById('url-input').value=SAMPLE_URLS[(sampleIdx+i)%SAMPLE_URLS.length];
+    i++;
+    setTimeout(()=>shortenURL(), i*100);
+  }, d(2800));
+}
+
+/* ══ AUTO DEMO ══ */
+function toggleAuto(){
+  const btn=document.getElementById('auto-btn');
+  if(autoTimer){
+    clearInterval(autoTimer); autoTimer=null;
+    btn.textContent='▶ Auto Demo'; btn.classList.remove('active');
+  } else {
+    btn.textContent='⏹ Stop'; btn.classList.add('active');
+    let tick=0;
+    autoTimer=setInterval(()=>{
+      if(busy) return;
+      const codes=Object.keys(dbStore);
+      if(tick<5 || codes.length<2){
+        document.getElementById('url-input').value=SAMPLE_URLS[tick%SAMPLE_URLS.length];
+        shortenURL();
+      } else {
+        const r=Math.random();
+        if(r<0.5) redirectDemo();
+        else if(r<0.7){ document.getElementById('url-input').value=SAMPLE_URLS[(tick+3)%SAMPLE_URLS.length]; shortenURL(); }
+        else simulateCacheMiss();
+      }
+      tick++;
+    }, d(3000));
+  }
+}
+
+/* ══ RESET ══ */
+function resetAll(){
+  if(autoTimer){ clearInterval(autoTimer); autoTimer=null; document.getElementById('auto-btn').textContent='▶ Auto Demo'; document.getElementById('auto-btn').classList.remove('active'); }
+  clearPipe();
+  Object.keys(dbStore).forEach(k=>delete dbStore[k]);
+  Object.keys(cacheStore).forEach(k=>delete cacheStore[k]);
+  cacheOrder.length=0;
+  counter=100000; sampleIdx=0; busy=false;
+  urlsCreated=0; redirectCount=0; cacheHits=0; dbLookups=0; totalClicks=0;
+  document.getElementById('result-placeholder').style.display='';
+  document.getElementById('result-url').style.display='none';
+  document.getElementById('copy-btn').style.display='none';
+  document.getElementById('browser-url').textContent='https://short.ly/';
+  document.getElementById('history-list').innerHTML='<div style="font-size:10px;color:#1e3a5f;text-align:center;padding:10px;">No URLs yet</div>';
+  document.getElementById('cache-body').innerHTML='<div style="font-size:10px;color:#1e293b;text-align:center;padding:8px;">empty</div>';
+  document.getElementById('db-body').innerHTML='';
+  document.getElementById('analytics-chart').innerHTML='<div style="font-size:10px;color:#1e293b;text-align:center;padding:8px;">no data yet</div>';
+  document.getElementById('log').innerHTML='';
+  updateStats();
+  addLog('ls','[System] URL Shortener reset — ready');
+}
+
+/* ══ INIT ══ */
+updateStats();
+addLog('ls','[System] URL Shortener ready');
+addLog('lc','[System] Click ✂️ Shorten URL or ▶ Auto Demo to begin');
+</script>
+</body>
+</html>
