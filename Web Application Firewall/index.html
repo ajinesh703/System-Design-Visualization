@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WAF — Web Application Firewall</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: #0d1117;
+  color: #e2e8f0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 16px 30px;
+}
+
+h1 { font-size: 22px; font-weight: 700; color: #f1f5f9; margin-bottom: 3px; }
+.subtitle { font-size: 11px; color: #475569; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 16px; }
+
+/* ═══ STATS ══════════════════════════════════ */
+.stats-bar {
+  display: flex; gap: 10px; justify-content: center;
+  margin-bottom: 14px; flex-wrap: wrap;
+}
+.stat-pill {
+  background: #111827; border: 1px solid #1e293b;
+  border-radius: 8px; padding: 5px 14px;
+  font-size: 11px; color: #64748b;
+  display: flex; align-items: center; gap: 6px;
+}
+.stat-pill b { font-size: 14px; font-weight: 700; color: #e2e8f0; }
+
+/* ═══ MAIN CANVAS ════════════════════════════ */
+.canvas {
+  position: relative;
+  width: 1060px;
+  height: 500px;
+}
+
+/* Section labels */
+.sec-label {
+  position: absolute; top: 6px;
+  font-size: 10px; font-weight: 700;
+  letter-spacing: .09em; text-transform: uppercase;
+  color: #1e293b; text-align: center;
+}
+.divider {
+  position: absolute; top: 24px; bottom: 12px;
+  width: 1px; background: #161e2e;
+}
+
+/* ═══ CLIENT NODES ══════════════════════════ */
+.client {
+  position: absolute;
+  width: 96px;
+  background: #111827;
+  border: 1.5px solid #1e293b;
+  border-radius: 10px;
+  padding: 8px 6px 7px;
+  display: flex; flex-direction: column;
+  align-items: center; gap: 4px;
+  cursor: pointer;
+  transition: filter .2s, transform .15s, border-color .3s;
+  z-index: 5; user-select: none;
+}
+.client:hover { transform: translateY(-2px); filter: brightness(1.15); }
+.client-icon { font-size: 20px; }
+.client-name { font-size: 10px; font-weight: 700; color: #94a3b8; text-align: center; line-height: 1.2; }
+.client-type { font-size: 8px; font-weight: 700; padding: 1px 6px; border-radius: 5px; letter-spacing: .04em; }
+.type-legit  { background: #14532d; color: #4ade80; }
+.type-attack { background: #450a0a; color: #f87171; }
+.type-bot    { background: #451a03; color: #fb923c; }
+.type-scan   { background: #1e1b4b; color: #a5b4fc; }
+
+/* ═══ WAF ENGINE ════════════════════════════ */
+#waf-engine {
+  position: absolute;
+  left: 268px; top: 50px;
+  width: 390px; height: 400px;
+  background: #0a0d14;
+  border: 2px solid #2563eb;
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 0 30px rgba(37,99,235,.15);
+  z-index: 10;
+}
+.waf-header {
+  background: #0f1f38;
+  padding: 10px 16px 8px;
+  display: flex; align-items: center; gap: 8px;
+  border-bottom: 1px solid #1e3a5f;
+}
+.waf-shield { font-size: 22px; }
+.waf-title-block .waf-name { font-size: 14px; font-weight: 800; color: #60a5fa; }
+.waf-title-block .waf-sub  { font-size: 9px; color: #1e3a5f; letter-spacing: .06em; text-transform: uppercase; }
+.waf-mode {
+  margin-left: auto; font-size: 9px; font-weight: 700;
+  padding: 2px 9px; border-radius: 12px;
+  background: #14532d; color: #4ade80; letter-spacing: .05em;
+}
+
+/* Rule engine layers */
+.rule-layers { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.rule-layer {
+  background: #111827;
+  border: 1.5px solid #1e293b;
+  border-radius: 10px;
+  padding: 7px 10px;
+  display: flex; align-items: center; gap: 8px;
+  transition: border-color .25s, background .25s;
+  position: relative; overflow: hidden;
+}
+.rule-layer::before {
+  content: '';
+  position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  border-radius: 10px 0 0 10px;
+  background: transparent; transition: background .25s;
+}
+.rule-layer.firing          { border-color: #dc2626; background: #1c0505; }
+.rule-layer.firing::before  { background: #dc2626; }
+.rule-layer.passing         { border-color: #16a34a; background: #061209; }
+.rule-layer.passing::before { background: #16a34a; }
+.rule-layer.checking        { border-color: #7c3aed; background: #130d1f; }
+.rule-layer.checking::before{ background: #7c3aed; }
+
+.rl-icon  { font-size: 17px; flex-shrink: 0; }
+.rl-body  { flex: 1; }
+.rl-name  { font-size: 10px; font-weight: 700; color: #94a3b8; }
+.rl-desc  { font-size: 8px; color: #334155; margin-top: 1px; }
+.rl-count { font-size: 9px; font-weight: 700; color: #475569; flex-shrink: 0; }
+.rl-badge {
+  font-size: 8px; font-weight: 700; padding: 1px 7px;
+  border-radius: 5px; flex-shrink: 0; opacity: 0;
+  transition: opacity .2s;
+}
+.rule-layer.firing  .rl-badge { opacity: 1; background: #450a0a; color: #f87171; }
+.rule-layer.passing .rl-badge { opacity: 1; background: #14532d; color: #4ade80; }
+.rule-layer.checking .rl-badge { opacity: 1; background: #1a0c2e; color: #c4b5fd; }
+
+/* Decision banner */
+.waf-decision {
+  margin: 4px 12px 10px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 11px; font-weight: 700;
+  text-align: center;
+  letter-spacing: .04em;
+  border: 1px solid transparent;
+  transition: all .3s;
+  opacity: 0;
+}
+.waf-decision.allow { background: #061209; border-color: #16a34a; color: #4ade80; opacity: 1; }
+.waf-decision.block { background: #1c0505; border-color: #dc2626; color: #f87171; opacity: 1; }
+.waf-decision.challenge { background: #150d02; border-color: #d97706; color: #fbbf24; opacity: 1; }
+
+/* ═══ BLOCKED QUEUE ═════════════════════════ */
+#blocked-panel {
+  position: absolute;
+  left: 268px; top: 462px;
+  width: 390px;
+}
+.blocked-feed {
+  background: #160505;
+  border: 1px solid #7f1d1d;
+  border-radius: 8px;
+  padding: 6px 10px;
+  max-height: 60px; overflow-y: auto;
+  font-family: monospace; font-size: 10px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.bf-row { color: #f87171; animation: bfi .2s ease; }
+@keyframes bfi { from { opacity:0; transform:translateX(-4px); } to { opacity:1; } }
+
+/* ═══ ORIGIN SERVER ═════════════════════════ */
+#origin {
+  position: absolute;
+  right: 18px; top: 130px;
+  width: 130px;
+  background: #061209;
+  border: 2px solid #16a34a;
+  border-radius: 14px;
+  padding: 14px 10px 12px;
+  display: flex; flex-direction: column;
+  align-items: center; gap: 6px;
+  z-index: 5;
+  transition: box-shadow .3s;
+}
+.origin-icon { font-size: 28px; }
+.origin-name { font-size: 12px; font-weight: 700; color: #4ade80; }
+.origin-sub  { font-size: 9px; color: #14532d; }
+.origin-rps  { font-size: 10px; font-weight: 700; color: #22c55e; }
+
+/* Health bar */
+.health-bar { width: 100%; height: 4px; background: #1e293b; border-radius: 2px; overflow: hidden; margin-top: 2px; }
+.health-fill { height: 100%; background: #16a34a; border-radius: 2px; transition: width .5s ease; }
+
+/* ═══ THREAT INTEL PANEL ════════════════════ */
+#threat-panel {
+  position: absolute;
+  right: 18px; top: 310px;
+  width: 160px;
+  background: #111827;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.threat-hdr {
+  background: #1c0505; padding: 6px 10px;
+  font-size: 9px; font-weight: 700; color: #f87171;
+  letter-spacing: .07em; text-transform: uppercase;
+  border-bottom: 1px solid #2d0a0a;
+}
+.threat-body { padding: 6px 8px; }
+.threat-row {
+  display: flex; justify-content: space-between;
+  font-size: 9px; color: #475569; margin-bottom: 4px;
+}
+.threat-row span:last-child { font-weight: 700; }
+.t-red   { color: #f87171; }
+.t-amber { color: #fb923c; }
+.t-green { color: #4ade80; }
+
+/* ═══ RULE COUNTERS ════════════════════════ */
+#rules-panel {
+  position: absolute;
+  right: 18px; top: 30px;
+  width: 160px;
+}
+.rp-item {
+  background: #111827; border: 1px solid #1e293b;
+  border-radius: 8px; padding: 5px 10px;
+  font-size: 10px; margin-bottom: 5px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.rp-name { color: #64748b; }
+.rp-val  { font-weight: 700; font-family: monospace; }
+
+/* ═══ MOVING PACKETS ════════════════════════ */
+.pkt {
+  position: fixed;
+  pointer-events: none;
+  z-index: 200;
+  border-radius: 20px;
+  font-size: 10px; font-weight: 700;
+  display: flex; align-items: center; gap: 4px;
+  padding: 3px 10px;
+  white-space: nowrap;
+  border: 1.5px solid rgba(255,255,255,.15);
+  box-shadow: 0 2px 14px rgba(0,0,0,.5);
+}
+
+/* Flash */
+@keyframes flash-ok  { 0% { box-shadow:0 0 0 0 rgba(22,163,74,.8); } 70% { box-shadow:0 0 0 12px rgba(22,163,74,0); } 100% { box-shadow:0 0 0 0 rgba(22,163,74,0); } }
+@keyframes flash-bad { 0% { box-shadow:0 0 0 0 rgba(220,38,38,.8); } 70% { box-shadow:0 0 0 12px rgba(220,38,38,0); } 100% { box-shadow:0 0 0 0 rgba(220,38,38,0); } }
+@keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-6px)} 40%{transform:translateX(6px)} 60%{transform:translateX(-4px)} 80%{transform:translateX(4px)} }
+.flash-ok  { animation: flash-ok  .5s ease-out; }
+.flash-bad { animation: flash-bad .5s ease-out; }
+.shaking   { animation: shake .4s ease; }
+
+/* ═══ LOG ════════════════════════════════════ */
+.log-wrap {
+  width: 1060px; margin: 10px auto 0;
+  background: #0a0d14; border: 1px solid #1e293b;
+  border-radius: 10px; overflow: hidden;
+}
+.log-hdr {
+  padding: 7px 14px; font-size: 10px; font-weight: 700;
+  color: #334155; border-bottom: 1px solid #1e293b;
+  letter-spacing: .07em; text-transform: uppercase;
+  display: flex; justify-content: space-between;
+}
+.log-body {
+  height: 72px; overflow-y: auto; padding: 5px 14px;
+  font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.7;
+}
+@keyframes li { from { opacity:0; transform:translateY(3px); } to { opacity:1; } }
+.le { animation: li .2s ease; }
+.ll { color: #4ade80; }
+.lb { color: #f87171; }
+.lw { color: #fbbf24; }
+.li { color: #60a5fa; }
+.lp { color: #a78bfa; }
+
+/* ═══ CONTROLS ══════════════════════════════ */
+.controls {
+  display: flex; gap: 7px; justify-content: center; flex-wrap: wrap; margin: 12px 0 0;
+}
+.btn {
+  font-size: 11px; font-weight: 600; padding: 7px 13px;
+  border-radius: 8px; border: 1px solid #1e293b;
+  background: #111827; color: #e2e8f0;
+  cursor: pointer; transition: background .15s;
+}
+.btn:hover { background: #1e293b; }
+.btn.active { background: #172554; border-color: #2563eb; color: #93c5fd; }
+.btn.red    { border-color: #7f1d1d; color: #fca5a5; }
+.btn.red:hover { background: #1c0505; }
+.btn.amber  { border-color: #78350f; color: #fcd34d; }
+.btn.amber:hover { background: #1c1004; }
+
+.speed-row {
+  display: flex; align-items: center; gap: 8px; justify-content: center;
+  margin: 8px 0 0; font-size: 11px; color: #475569;
+}
+input[type=range] { width: 80px; accent-color: #2563eb; }
+</style>
+</head>
+<body>
+
+<h1>WAF — Web Application Firewall</h1>
+<div class="subtitle">System Design — How rules block malicious request patterns</div>
+
+<div class="stats-bar">
+  <div class="stat-pill" style="border-color:#14532d">✅ Allowed  <b id="st-allow" style="color:#4ade80">0</b></div>
+  <div class="stat-pill" style="border-color:#450a0a">🚫 Blocked  <b id="st-block" style="color:#f87171">0</b></div>
+  <div class="stat-pill" style="border-color:#451a03">🔔 Challenged <b id="st-chal"  style="color:#fb923c">0</b></div>
+  <div class="stat-pill">Total Requests <b id="st-total">0</b></div>
+  <div class="stat-pill">Block Rate <b id="st-brate">0%</b></div>
+  <div class="stat-pill">Server Health <b id="st-health" style="color:#4ade80">100%</b></div>
+</div>
+
+<div class="canvas" id="canvas">
+
+  <!-- Section labels -->
+  <div class="sec-label" style="left:0;width:260px;">Incoming Traffic</div>
+  <div class="sec-label" style="left:268px;width:390px;">WAF Engine</div>
+  <div class="sec-label" style="left:680px;width:360px;">Protected Origin</div>
+  <div class="divider" style="left:260px;"></div>
+  <div class="divider" style="left:664px;"></div>
+
+  <!-- ══ CLIENTS (left column) ══ -->
+  <!-- Legitimate users -->
+  <div class="client" id="cl-legit0" style="left:10px;top:55px;" onclick="sendReq('legit')" title="Send legitimate request">
+    <div class="client-icon">🧑‍💻</div>
+    <div class="client-name">Browser User</div>
+    <div class="client-type type-legit">LEGIT</div>
+  </div>
+  <div class="client" id="cl-legit1" style="left:140px;top:55px;" onclick="sendReq('legit')" title="Send legitimate request">
+    <div class="client-icon">📱</div>
+    <div class="client-name">Mobile App</div>
+    <div class="client-type type-legit">LEGIT</div>
+  </div>
+
+  <!-- SQL Injection -->
+  <div class="client" id="cl-sqli" style="left:10px;top:175px;" onclick="sendReq('sqli')" title="SQL injection attack">
+    <div class="client-icon">💉</div>
+    <div class="client-name">SQL Injection</div>
+    <div class="client-type type-attack">ATTACK</div>
+  </div>
+
+  <!-- XSS -->
+  <div class="client" id="cl-xss" style="left:140px;top:175px;" onclick="sendReq('xss')" title="XSS attack">
+    <div class="client-icon">📜</div>
+    <div class="client-name">XSS Script</div>
+    <div class="client-type type-attack">ATTACK</div>
+  </div>
+
+  <!-- Bot / scraper -->
+  <div class="client" id="cl-bot" style="left:10px;top:295px;" onclick="sendReq('bot')" title="Bot / scraper">
+    <div class="client-icon">🤖</div>
+    <div class="client-name">Malicious Bot</div>
+    <div class="client-type type-bot">BOT</div>
+  </div>
+
+  <!-- Path traversal -->
+  <div class="client" id="cl-path" style="left:140px;top:295px;" onclick="sendReq('path')" title="Path traversal attack">
+    <div class="client-icon">📂</div>
+    <div class="client-name">Path Traversal</div>
+    <div class="client-type type-attack">ATTACK</div>
+  </div>
+
+  <!-- DDoS flood -->
+  <div class="client" id="cl-flood" style="left:10px;top:405px;" onclick="sendReq('flood')" title="Rate limit / flood">
+    <div class="client-icon">🌊</div>
+    <div class="client-name">Rate Flood</div>
+    <div class="client-type type-bot">FLOOD</div>
+  </div>
+
+  <!-- Port scan -->
+  <div class="client" id="cl-scan" style="left:140px;top:405px;" onclick="sendReq('scan')" title="Port scan / recon">
+    <div class="client-icon">🔭</div>
+    <div class="client-name">Recon / Scan</div>
+    <div class="client-type type-scan">SCAN</div>
+  </div>
+
+  <!-- ══ WAF ENGINE ══ -->
+  <div id="waf-engine">
+    <div class="waf-header">
+      <div class="waf-shield">🛡️</div>
+      <div class="waf-title-block">
+        <div class="waf-name">Web Application Firewall</div>
+        <div class="waf-sub">nginx ModSecurity · OWASP CRS · Custom Rules</div>
+      </div>
+      <div class="waf-mode" id="waf-mode">ENFORCING</div>
+    </div>
+
+    <div class="rule-layers" id="rule-layers">
+      <!-- Layer 1: IP reputation -->
+      <div class="rule-layer" id="rl-0">
+        <div class="rl-icon">🌍</div>
+        <div class="rl-body"><div class="rl-name">IP Reputation & Geo-block</div><div class="rl-desc">blocklist, tor exit nodes, known bad IPs</div></div>
+        <div class="rl-count" id="rl-0-cnt">0</div>
+        <div class="rl-badge">—</div>
+      </div>
+      <!-- Layer 2: Rate limiting -->
+      <div class="rule-layer" id="rl-1">
+        <div class="rl-icon">⏱️</div>
+        <div class="rl-body"><div class="rl-name">Rate Limiting</div><div class="rl-desc">100 req/min per IP · token bucket</div></div>
+        <div class="rl-count" id="rl-1-cnt">0</div>
+        <div class="rl-badge">—</div>
+      </div>
+      <!-- Layer 3: Bot detection -->
+      <div class="rule-layer" id="rl-2">
+        <div class="rl-icon">🤖</div>
+        <div class="rl-body"><div class="rl-name">Bot Detection</div><div class="rl-desc">User-agent, fingerprint, JS challenge</div></div>
+        <div class="rl-count" id="rl-2-cnt">0</div>
+        <div class="rl-badge">—</div>
+      </div>
+      <!-- Layer 4: OWASP rules -->
+      <div class="rule-layer" id="rl-3">
+        <div class="rl-icon">💉</div>
+        <div class="rl-body"><div class="rl-name">OWASP CRS — SQLi / XSS</div><div class="rl-desc">pattern match: UNION SELECT, &lt;script&gt;, ../</div></div>
+        <div class="rl-count" id="rl-3-cnt">0</div>
+        <div class="rl-badge">—</div>
+      </div>
+      <!-- Layer 5: Request validation -->
+      <div class="rule-layer" id="rl-4">
+        <div class="rl-icon">📋</div>
+        <div class="rl-body"><div class="rl-name">Request Validation</div><div class="rl-desc">header size, content-type, payload schema</div></div>
+        <div class="rl-count" id="rl-4-cnt">0</div>
+        <div class="rl-badge">—</div>
+      </div>
+      <!-- Layer 6: Custom rules -->
+      <div class="rule-layer" id="rl-5">
+        <div class="rl-icon">⚙️</div>
+        <div class="rl-body"><div class="rl-name">Custom Business Rules</div><div class="rl-desc">path allowlist, auth tokens, CORS policy</div></div>
+        <div class="rl-count" id="rl-5-cnt">0</div>
+        <div class="rl-badge">—</div>
+      </div>
+    </div>
+
+    <!-- Decision banner -->
+    <div class="waf-decision" id="waf-decision">—</div>
+  </div>
+
+  <!-- ══ ORIGIN SERVER ══ -->
+  <div id="origin">
+    <div class="origin-icon">🖥️</div>
+    <div class="origin-name">Origin Server</div>
+    <div class="origin-sub">App / API / DB</div>
+    <div class="origin-rps">Requests/s: <span id="origin-rps">0</span></div>
+    <div style="font-size:9px;color:#334155;margin-top:2px;">Health</div>
+    <div class="health-bar"><div class="health-fill" id="health-fill" style="width:100%;"></div></div>
+  </div>
+
+  <!-- ══ THREAT INTEL ══ -->
+  <div id="threat-panel">
+    <div class="threat-hdr">🔴 Threat Intel</div>
+    <div class="threat-body">
+      <div class="threat-row"><span>SQLi attempts</span><span class="t-red"  id="ti-sqli">0</span></div>
+      <div class="threat-row"><span>XSS attempts</span><span class="t-red"   id="ti-xss">0</span></div>
+      <div class="threat-row"><span>Bot requests</span><span class="t-amber" id="ti-bot">0</span></div>
+      <div class="threat-row"><span>Path traversal</span><span class="t-red" id="ti-path">0</span></div>
+      <div class="threat-row"><span>Rate floods</span><span class="t-amber"  id="ti-flood">0</span></div>
+      <div class="threat-row"><span>Clean requests</span><span class="t-green" id="ti-clean">0</span></div>
+    </div>
+  </div>
+
+  <!-- ══ RULES PANEL ══ -->
+  <div id="rules-panel">
+    <div style="font-size:9px;font-weight:700;color:#334155;letter-spacing:.07em;text-transform:uppercase;margin-bottom:5px;">Rule Hits</div>
+    <div class="rp-item"><span class="rp-name">IP Block</span><span class="rp-val" id="rp-0" style="color:#f87171;">0</span></div>
+    <div class="rp-item"><span class="rp-name">Rate Limit</span><span class="rp-val" id="rp-1" style="color:#fb923c;">0</span></div>
+    <div class="rp-item"><span class="rp-name">Bot Block</span><span class="rp-val" id="rp-2" style="color:#fb923c;">0</span></div>
+    <div class="rp-item"><span class="rp-name">OWASP CRS</span><span class="rp-val" id="rp-3" style="color:#f87171;">0</span></div>
+    <div class="rp-item"><span class="rp-name">Validation</span><span class="rp-val" id="rp-4" style="color:#fbbf24;">0</span></div>
+    <div class="rp-item"><span class="rp-name">Custom Rule</span><span class="rp-val" id="rp-5" style="color:#a78bfa;">0</span></div>
+  </div>
+
+  <!-- Packet layer -->
+  <div id="pkts" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:30;"></div>
+</div>
+
+<!-- Blocked feed -->
+<div style="width:1060px;margin:6px auto 0;">
+  <div style="font-size:9px;font-weight:700;color:#7f1d1d;letter-spacing:.07em;text-transform:uppercase;margin-bottom:4px;">🚫 Blocked Request Feed</div>
+  <div class="blocked-feed" id="blocked-feed">
+    <div class="bf-row" style="color:#334155;">Waiting for blocked requests…</div>
+  </div>
+</div>
+
+<!-- LOG -->
+<div class="log-wrap">
+  <div class="log-hdr">
+    <span>WAF Inspection Log</span>
+    <span style="color:#1e293b">IP check → Rate → Bot → OWASP → Validation → Custom → Decision</span>
+  </div>
+  <div class="log-body" id="log"></div>
+</div>
+
+<!-- CONTROLS -->
+<div class="controls">
+  <button class="btn" onclick="sendReq('legit')">✅ Legit Request</button>
+  <button class="btn red" onclick="sendReq('sqli')">💉 SQLi Attack</button>
+  <button class="btn red" onclick="sendReq('xss')">📜 XSS Attack</button>
+  <button class="btn amber" onclick="sendReq('bot')">🤖 Bot Request</button>
+  <button class="btn red" onclick="sendReq('path')">📂 Path Traversal</button>
+  <button class="btn amber" onclick="sendReq('flood')">🌊 Rate Flood</button>
+  <button class="btn" onclick="sendReq('scan')">🔭 Recon Scan</button>
+  <button class="btn" onclick="burstAttack()">💥 Attack Burst</button>
+  <button class="btn" id="auto-btn" onclick="toggleAuto()">▶ Auto Demo</button>
+  <button class="btn" onclick="resetAll()" style="color:#475569;">↺ Reset</button>
+</div>
+<div class="speed-row">
+  Speed <input type="range" min="0.3" max="3" step="0.1" value="1" oninput="spd=parseFloat(this.value)">
+</div>
+
+<script>
+let spd = 1, autoTimer = null;
+let allowed=0, blocked=0, challenged=0, totalReq=0;
+let serverHealth=100, originRps=0;
+let ruleHits=[0,0,0,0,0,0];
+let threatCounts={sqli:0,xss:0,bot:0,path:0,flood:0,clean:0};
+let pipeTimers=[];
+let busy=false;
+let rpsTimer=null, rpsCount=0;
+
+function d(ms){ return ms/spd; }
+
+/* ══ REQUEST DEFINITIONS ══ */
+const REQUEST_TYPES = {
+  legit: {
+    label:'GET /api/products', icon:'✅',
+    bg:'#0d1f0d', border:'#16a34a', color:'#86efac',
+    decision:'allow',
+    layers:{ 0:'pass', 1:'pass', 2:'pass', 3:'pass', 4:'pass', 5:'pass' },
+    ruleHit: -1,
+    logMsgs:[
+      [,'li','[IP Check] Reputation OK — no blocklist match'],
+      [,'li','[Rate Limit] 12 req/min — within threshold'],
+      [,'li','[Bot Detection] Valid browser fingerprint'],
+      [,'li','[OWASP] No SQLi / XSS pattern detected'],
+      [,'li','[Validation] Headers and payload valid'],
+      [,'li','[Custom Rules] Path /api/products — allowed'],
+      [,'ll','[WAF] ✅ ALLOW — request forwarded to origin'],
+    ],
+    clientId:'cl-legit0',
+  },
+  sqli: {
+    label:"GET /users?id=1' OR '1'='1", icon:'💉',
+    bg:'#1c0505', border:'#dc2626', color:'#fca5a5',
+    decision:'block',
+    layers:{ 0:'pass', 1:'pass', 2:'pass', 3:'fire' },
+    ruleHit: 3,
+    logMsgs:[
+      [,'li','[IP Check] IP clean — passing'],
+      [,'li','[Rate Limit] Request count OK'],
+      [,'li','[Bot Detection] Browser UA — passing'],
+      [,'lb',"[OWASP CRS] 🚨 SQLi DETECTED — pattern: OR '1'='1' in query string"],
+      [,'lb','[WAF] 🚫 BLOCK — 403 Forbidden (SQLi rule id: 942100)'],
+    ],
+    clientId:'cl-sqli',
+    threatKey:'sqli',
+  },
+  xss: {
+    label:'POST /comment body=<script>alert(1)</script>', icon:'📜',
+    bg:'#1c0505', border:'#dc2626', color:'#fca5a5',
+    decision:'block',
+    layers:{ 0:'pass', 1:'pass', 2:'pass', 3:'fire' },
+    ruleHit: 3,
+    logMsgs:[
+      [,'li','[IP Check] IP clean'],
+      [,'li','[Rate Limit] Within threshold'],
+      [,'li','[Bot Detection] UA valid'],
+      [,'lb','[OWASP CRS] 🚨 XSS DETECTED — pattern: <script> in POST body'],
+      [,'lb','[WAF] 🚫 BLOCK — 403 Forbidden (XSS rule id: 941100)'],
+    ],
+    clientId:'cl-xss',
+    threatKey:'xss',
+  },
+  bot: {
+    label:'GET /sitemap.xml (no JS, bad UA)', icon:'🤖',
+    bg:'#1c1004', border:'#d97706', color:'#fcd34d',
+    decision:'challenge',
+    layers:{ 0:'pass', 1:'pass', 2:'fire' },
+    ruleHit: 2,
+    logMsgs:[
+      [,'li','[IP Check] IP not on blocklist'],
+      [,'li','[Rate Limit] 34 req/min — warning zone'],
+      [,'lw','[Bot Detection] 🤖 Suspicious UA: "python-requests/2.28" — no JS execution'],
+      [,'lw','[WAF] 🔔 CHALLENGE — CAPTCHA / JS challenge issued'],
+    ],
+    clientId:'cl-bot',
+    threatKey:'bot',
+  },
+  path: {
+    label:'GET /../../etc/passwd', icon:'📂',
+    bg:'#1c0505', border:'#dc2626', color:'#fca5a5',
+    decision:'block',
+    layers:{ 0:'pass', 1:'pass', 2:'pass', 3:'fire' },
+    ruleHit: 3,
+    logMsgs:[
+      [,'li','[IP Check] Clean IP'],
+      [,'li','[Rate Limit] OK'],
+      [,'li','[Bot Detection] Passing'],
+      [,'lb','[OWASP CRS] 🚨 PATH TRAVERSAL — pattern: ../../ detected in URI'],
+      [,'lb','[WAF] 🚫 BLOCK — 403 Forbidden (rule id: 930100)'],
+    ],
+    clientId:'cl-path',
+    threatKey:'path',
+  },
+  flood: {
+    label:'GET / (450 req/min burst)', icon:'🌊',
+    bg:'#1c1004', border:'#d97706', color:'#fcd34d',
+    decision:'block',
+    layers:{ 0:'pass', 1:'fire' },
+    ruleHit: 1,
+    logMsgs:[
+      [,'li','[IP Check] IP clean'],
+      [,'lw','[Rate Limit] 🌊 450 req/min — EXCEEDED threshold (100 req/min)'],
+      [,'lb','[WAF] 🚫 BLOCK — 429 Too Many Requests (rate limit)'],
+    ],
+    clientId:'cl-flood',
+    threatKey:'flood',
+  },
+  scan: {
+    label:'GET /admin /wp-login /.env (recon)', icon:'🔭',
+    bg:'#1e1b4b', border:'#6366f1', color:'#c7d2fe',
+    decision:'block',
+    layers:{ 0:'pass', 1:'pass', 2:'pass', 3:'pass', 4:'pass', 5:'fire' },
+    ruleHit: 5,
+    logMsgs:[
+      [,'li','[IP Check] Clean'],
+      [,'li','[Rate Limit] Moderate'],
+      [,'li','[Bot Detection] Neutral UA'],
+      [,'li','[OWASP] No payload injection'],
+      [,'li','[Validation] Headers valid'],
+      [,'lb','[Custom Rules] 🚫 Path /.env not in allowlist — recon pattern blocked'],
+      [,'lb','[WAF] 🚫 BLOCK — 403 Forbidden (custom rule: path-allowlist)'],
+    ],
+    clientId:'cl-scan',
+  },
+};
+
+/* ══ LOG ══ */
+function addLog(cls, msg){
+  const ts=new Date().toLocaleTimeString('en-GB',{hour12:false});
+  const el=document.createElement('div');
+  el.className='le';
+  el.innerHTML=`<span style="color:#1e293b">${ts}</span> <span class="${cls}">${msg}</span>`;
+  const lb=document.getElementById('log');
+  lb.appendChild(el); lb.scrollTop=lb.scrollHeight;
+  if(lb.children.length>80) lb.removeChild(lb.firstChild);
+}
+
+/* ══ STATS ══ */
+function updateStats(){
+  document.getElementById('st-allow').textContent = allowed;
+  document.getElementById('st-block').textContent = blocked;
+  document.getElementById('st-chal').textContent  = challenged;
+  document.getElementById('st-total').textContent = totalReq;
+  const brate = totalReq ? Math.round((blocked+challenged)/totalReq*100) : 0;
+  document.getElementById('st-brate').textContent = brate+'%';
+  document.getElementById('st-brate').style.color = brate>50?'#f87171':brate>20?'#fbbf24':'#4ade80';
+  document.getElementById('st-health').textContent = serverHealth+'%';
+  document.getElementById('st-health').style.color = serverHealth>70?'#4ade80':serverHealth>40?'#fbbf24':'#f87171';
+  document.getElementById('health-fill').style.width = serverHealth+'%';
+  document.getElementById('health-fill').style.background = serverHealth>70?'#16a34a':serverHealth>40?'#d97706':'#dc2626';
+  // Rule hit counts
+  ruleHits.forEach((v,i)=>{
+    document.getElementById('rp-'+i).textContent=v;
+    document.getElementById('rl-'+i+'-cnt').textContent=v;
+  });
+  // Threat intel
+  document.getElementById('ti-sqli').textContent  = threatCounts.sqli;
+  document.getElementById('ti-xss').textContent   = threatCounts.xss;
+  document.getElementById('ti-bot').textContent   = threatCounts.bot;
+  document.getElementById('ti-path').textContent  = threatCounts.path;
+  document.getElementById('ti-flood').textContent = threatCounts.flood;
+  document.getElementById('ti-clean').textContent = threatCounts.clean;
+}
+
+/* ══ PIPELINE HELPERS ══ */
+function clearPipe(){
+  pipeTimers.forEach(t=>clearTimeout(t));
+  pipeTimers=[];
+  for(let i=0;i<6;i++){
+    const el=document.getElementById('rl-'+i);
+    if(el) el.className='rule-layer';
+  }
+  const dec=document.getElementById('waf-decision');
+  dec.className='waf-decision'; dec.textContent='—';
+}
+
+function lightLayer(idx, cls, delay){
+  const t=setTimeout(()=>{
+    const el=document.getElementById('rl-'+idx);
+    if(el) el.className='rule-layer '+cls;
+  }, d(delay));
+  pipeTimers.push(t);
+}
+
+/* ══ PACKET ANIMATION ══ */
+function flyPkt(fromEl, toEl, opts, onDone){
+  if(!fromEl||!toEl) return;
+  const fr=fromEl.getBoundingClientRect(), to=toEl.getBoundingClientRect();
+  const fx=fr.left+fr.width/2, fy=fr.top+fr.height/2;
+  const tx=to.left+to.width/2, ty=to.top+to.height/2;
+  const pkt=document.createElement('div');
+  pkt.className='pkt';
+  const w=opts.w||80, h=24;
+  pkt.style.cssText=`background:${opts.bg};border-color:${opts.border};color:${opts.color};width:${w}px;height:${h}px;left:${fx-w/2}px;top:${fy-h/2}px;opacity:1;`;
+  pkt.innerHTML=opts.label;
+  document.body.appendChild(pkt);
+  const dist=Math.hypot(tx-fx,ty-fy);
+  const dur=Math.max(200,dist/(190*spd)*1000);
+  pkt.animate([
+    {left:(fx-w/2)+'px',top:(fy-h/2)+'px',opacity:1},
+    {left:(tx-w/2)+'px',top:(ty-h/2)+'px',opacity:1}
+  ],{duration:dur,easing:'cubic-bezier(.4,0,.2,1)',fill:'forwards'})
+  .finished.then(()=>{ pkt.remove(); if(onDone) onDone(); });
+}
+
+function flash(el, type){
+  if(!el) return;
+  el.classList.remove('flash-ok','flash-bad','shaking');
+  void el.offsetWidth;
+  el.classList.add(type==='bad'?'flash-bad':type==='shake'?'shaking':'flash-ok');
+  setTimeout(()=>el.classList.remove('flash-ok','flash-bad','shaking'), 600);
+}
+
+/* ══ BLOCKED FEED ══ */
+function addBlockedFeed(type, label){
+  const feed=document.getElementById('blocked-feed');
+  const empty=feed.querySelector('[style*="Waiting"]');
+  if(empty) empty.remove();
+  const row=document.createElement('div');
+  row.className='bf-row';
+  const ts=new Date().toLocaleTimeString('en-GB',{hour12:false});
+  row.innerHTML=`<span style="color:#334155">${ts}</span> 🚫 [${type.toUpperCase()}] ${label}`;
+  feed.insertBefore(row,feed.firstChild);
+  if(feed.children.length>8) feed.removeChild(feed.lastChild);
+}
+
+/* ══ MAIN SEND REQUEST ══ */
+function sendReq(type){
+  if(busy) return;
+  busy=true;
+  totalReq++;
+  rpsCount++;
+
+  const def=REQUEST_TYPES[type];
+  const clientEl=document.getElementById(def.clientId||(type==='legit'?'cl-legit0':'cl-'+type));
+  const wafEl=document.getElementById('waf-engine');
+  const originEl=document.getElementById('origin');
+
+  clearPipe();
+  flash(clientEl, type==='legit'?'ok':'bad');
+  addLog('li',`[Request] ${def.icon} ${def.label}`);
+
+  // Client → WAF
+  flyPkt(clientEl, wafEl, { ...def, label: def.icon+' '+type.toUpperCase(), w:90 }, ()=>{
+    flash(wafEl, type==='legit'?'ok':'bad');
+
+    /* Animate each rule layer in sequence */
+    const layerKeys = Object.keys(def.layers);
+    let delay=80;
+    const STEP=280;
+
+    layerKeys.forEach((li,i)=>{
+      const state=def.layers[li];
+      const cls = state==='fire'?'firing': state==='challenge'?'checking':'passing';
+      lightLayer(parseInt(li), cls, delay);
+      if(i < def.logMsgs.length){
+        const msg=def.logMsgs[i];
+        pipeTimers.push(setTimeout(()=>addLog(msg[1],msg[2]), d(delay+80)));
+      }
+      if(state==='fire' || state==='challenge'){
+        // Stop after this layer
+        const finalDelay=delay+STEP;
+        pipeTimers.push(setTimeout(()=>{
+          // show remaining log messages
+          for(let j=i+1;j<def.logMsgs.length;j++){
+            const mm=def.logMsgs[j];
+            pipeTimers.push(setTimeout(()=>addLog(mm[1],mm[2]), d((j-i)*80)));
+          }
+          // Decision banner
+          const dec=document.getElementById('waf-decision');
+          if(def.decision==='block'){
+            dec.className='waf-decision block';
+            dec.textContent='🚫 BLOCKED — 403 Forbidden';
+            blocked++;
+            if(def.ruleHit>=0) ruleHits[def.ruleHit]++;
+            if(def.threatKey) threatCounts[def.threatKey]++;
+            addBlockedFeed(type, def.label);
+            serverHealth=Math.max(40, serverHealth);
+          } else {
+            dec.className='waf-decision challenge';
+            dec.textContent='🔔 CHALLENGED — CAPTCHA required';
+            challenged++;
+            if(def.ruleHit>=0) ruleHits[def.ruleHit]++;
+            if(def.threatKey) threatCounts[def.threatKey]++;
+            addBlockedFeed(type, def.label+' (challenged)');
+          }
+          // Bounce packet back to client
+          setTimeout(()=>{
+            flyPkt(wafEl, clientEl, {
+              bg:'#1c0505', border:'#dc2626', color:'#f87171',
+              label: def.decision==='block'?'✗ 403':'🔔 CAPTCHA', w:80
+            }, ()=>{
+              flash(clientEl,'bad');
+              updateStats();
+              busy=false;
+              setTimeout(()=>clearPipe(),d(1200));
+            });
+          }, d(200));
+        }, d(finalDelay)));
+        return; // stop processing more layers
+      }
+      delay+=STEP;
+    });
+
+    /* All layers passed → ALLOW */
+    if(def.decision==='allow'){
+      const totalDelay = layerKeys.length*STEP + 100;
+      pipeTimers.push(setTimeout(()=>{
+        // remaining log msgs
+        const logged=layerKeys.length;
+        for(let j=logged;j<def.logMsgs.length;j++){
+          const mm=def.logMsgs[j];
+          pipeTimers.push(setTimeout(()=>addLog(mm[1],mm[2]), d((j-logged)*80)));
+        }
+        const dec=document.getElementById('waf-decision');
+        dec.className='waf-decision allow';
+        dec.textContent='✅ ALLOWED — forwarded to origin';
+        allowed++;
+        threatCounts.clean++;
+        // WAF → Origin
+        setTimeout(()=>{
+          flyPkt(wafEl, originEl, {
+            bg:'#0d1f0d', border:'#16a34a', color:'#86efac',
+            label:'✅ forwarded', w:90
+          }, ()=>{
+            flash(originEl,'ok');
+            addLog('ll','[Origin] Request processed — 200 OK');
+            serverHealth=Math.min(100, serverHealth+1);
+            // Origin → WAF → Client (response)
+            setTimeout(()=>{
+              flyPkt(originEl, wafEl, {
+                bg:'#0d1f0d', border:'#16a34a', color:'#4ade80',
+                label:'200 OK', w:64
+              }, ()=>{
+                flyPkt(wafEl, clientEl, {
+                  bg:'#0d1f0d', border:'#16a34a', color:'#4ade80',
+                  label:'✓ 200 OK', w:70
+                }, ()=>{
+                  flash(clientEl,'ok');
+                  updateStats();
+                  busy=false;
+                  setTimeout(()=>clearPipe(),d(1200));
+                });
+              });
+            }, d(200));
+          });
+        }, d(300));
+      }, d(totalDelay)));
+    }
+  });
+  updateStats();
+}
+
+/* ══ ATTACK BURST ══ */
+function burstAttack(){
+  const types=['sqli','xss','bot','path','flood','scan'];
+  let i=0;
+  const iv=setInterval(()=>{
+    if(i>=types.length){ clearInterval(iv); return; }
+    if(!busy){ sendReq(types[i]); i++; }
+  }, d(2200));
+}
+
+/* ══ AUTO DEMO ══ */
+function toggleAuto(){
+  const btn=document.getElementById('auto-btn');
+  if(autoTimer){ clearInterval(autoTimer); autoTimer=null; btn.textContent='▶ Auto Demo'; btn.classList.remove('active'); return; }
+  btn.textContent='⏹ Stop'; btn.classList.add('active');
+  const seq=['legit','legit','sqli','legit','bot','xss','legit','flood','path','legit','scan','legit','legit','sqli','bot'];
+  let tick=0;
+  autoTimer=setInterval(()=>{
+    if(!busy){ sendReq(seq[tick%seq.length]); tick++; }
+  }, d(2000));
+}
+
+/* ══ RPS COUNTER ══ */
+setInterval(()=>{
+  document.getElementById('origin-rps').textContent=rpsCount;
+  rpsCount=0;
+},1000);
+
+/* ══ RESET ══ */
+function resetAll(){
+  if(autoTimer){ clearInterval(autoTimer); autoTimer=null; document.getElementById('auto-btn').textContent='▶ Auto Demo'; document.getElementById('auto-btn').classList.remove('active'); }
+  clearPipe(); busy=false;
+  allowed=0; blocked=0; challenged=0; totalReq=0; rpsCount=0;
+  ruleHits=[0,0,0,0,0,0];
+  threatCounts={sqli:0,xss:0,bot:0,path:0,flood:0,clean:0};
+  serverHealth=100;
+  document.getElementById('blocked-feed').innerHTML='<div class="bf-row" style="color:#334155;">Waiting for blocked requests…</div>';
+  document.getElementById('log').innerHTML='';
+  updateStats();
+  addLog('li','[System] WAF reset — enforcing mode active');
+}
+
+/* ══ INIT ══ */
+updateStats();
+addLog('li','[WAF] Enforcing mode — OWASP CRS + custom rules loaded');
+addLog('li','[WAF] Click any attacker or ▶ Auto Demo to see inspection in action');
+</script>
+</body>
+</html>
