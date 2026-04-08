@@ -1,0 +1,1188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>API Call — Lifecycle Animation</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:        #06080f;
+  --surface:   #0c0f1a;
+  --surface2:  #111628;
+  --border:    #1a2040;
+  --border2:   #243060;
+  --accent:    #4f8eff;
+  --accent2:   #7b5ea7;
+  --green:     #22d47a;
+  --red:       #ff4d6a;
+  --amber:     #f5a623;
+  --cyan:      #00d4ff;
+  --purple:    #9b72f5;
+  --text:      #e8eaf6;
+  --text2:     #8891b0;
+  --text3:     #3a4468;
+  --mono:      'JetBrains Mono', monospace;
+  --display:   'Syne', sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--display);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── GRID BACKGROUND ── */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image:
+    linear-gradient(rgba(79,142,255,.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(79,142,255,.04) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none; z-index: 0;
+}
+
+.wrap {
+  position: relative; z-index: 1;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 28px 20px 40px;
+}
+
+/* ── HEADER ── */
+.hd {
+  display: flex; align-items: baseline; gap: 16px;
+  margin-bottom: 6px;
+}
+.hd h1 {
+  font-family: var(--display);
+  font-size: 28px; font-weight: 800;
+  letter-spacing: -.02em;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--cyan) 60%, var(--purple) 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.hd .tag {
+  font-family: var(--mono); font-size: 10px; font-weight: 500;
+  color: var(--text3); letter-spacing: .12em; text-transform: uppercase;
+}
+.sub {
+  font-family: var(--mono); font-size: 11px; color: var(--text3);
+  margin-bottom: 22px; letter-spacing: .04em;
+}
+
+/* ── STATS ROW ── */
+.stats {
+  display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px;
+}
+.sp {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 14px;
+  font-family: var(--mono); font-size: 11px; color: var(--text2);
+  display: flex; align-items: center; gap: 6px;
+}
+.sp b { font-size: 15px; font-weight: 700; color: var(--text); }
+
+/* ── MAIN STAGE ── */
+.stage {
+  display: grid;
+  grid-template-columns: 200px 1fr 200px;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+/* ── CLIENT / SERVER CARDS ── */
+.endpoint-card {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  position: relative;
+}
+.ec-header {
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+}
+.ec-icon { font-size: 22px; }
+.ec-label { font-size: 13px; font-weight: 700; color: var(--text); }
+.ec-sub   { font-size: 9px;  color: var(--text3); font-family: var(--mono); }
+.ec-body  { padding: 10px 12px; }
+
+/* Client code block */
+.code-block {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: var(--mono); font-size: 10px;
+  line-height: 1.6; color: var(--text2);
+  margin-bottom: 8px;
+  position: relative; overflow: hidden;
+}
+.code-block .kw  { color: var(--purple); }
+.code-block .str { color: var(--green); }
+.code-block .fn  { color: var(--cyan); }
+.code-block .num { color: var(--amber); }
+.code-block .cmt { color: var(--text3); }
+.code-block .hl  { color: var(--accent); }
+
+/* ── CENTER PIPELINE ── */
+.pipeline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Timeline header */
+.timeline-hdr {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 4px;
+}
+.tl-title {
+  font-size: 10px; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--text3);
+}
+
+/* The main pipe visualization */
+.pipe-vis {
+  position: relative;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  padding: 0;
+}
+
+/* Pipe column headers */
+.pipe-cols {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 0;
+}
+.pc-head {
+  text-align: center;
+  font-family: var(--mono); font-size: 9px;
+  font-weight: 600; color: var(--text3);
+  letter-spacing: .08em; text-transform: uppercase;
+  padding: 0 8px; border-right: 1px solid var(--border);
+}
+.pc-head:last-child { border-right: none; }
+
+/* Pipe steps */
+.pipe-steps { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+
+.ps {
+  display: grid;
+  grid-template-columns: 130px 1fr 80px 80px;
+  gap: 8px; align-items: center;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  transition: border-color .25s, background .25s, box-shadow .25s;
+  position: relative; overflow: hidden;
+}
+.ps::before {
+  content: '';
+  position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  border-radius: 10px 0 0 10px;
+  background: transparent;
+  transition: background .25s;
+}
+.ps.active   { border-color: var(--accent);  background: #0a1228; box-shadow: 0 0 20px rgba(79,142,255,.12); }
+.ps.active::before { background: var(--accent); }
+.ps.done     { border-color: var(--green);   background: #061210; }
+.ps.done::before   { background: var(--green); }
+.ps.error    { border-color: var(--red);     background: #160610; }
+.ps.error::before  { background: var(--red); }
+.ps.waiting  { border-color: var(--amber);   background: #130d04; }
+.ps.waiting::before{ background: var(--amber); }
+
+.ps-name  { font-size: 11px; font-weight: 600; color: var(--text2); display: flex; align-items: center; gap: 6px; }
+.ps-icon  { font-size: 14px; }
+.ps-detail { font-family: var(--mono); font-size: 9px; color: var(--text3); line-height: 1.4; }
+.ps-method {
+  font-family: var(--mono); font-size: 9px; font-weight: 700;
+  padding: 2px 6px; border-radius: 4px; text-align: center;
+}
+.ps-status {
+  font-family: var(--mono); font-size: 10px; font-weight: 700;
+  text-align: center; transition: color .3s;
+}
+
+/* Method badges */
+.m-get    { background: #0a2a14; color: #22d47a; }
+.m-post   { background: #1a1040; color: #9b72f5; }
+.m-put    { background: #1a1004; color: #f5a623; }
+.m-delete { background: #1a0610; color: #ff4d6a; }
+.m-patch  { background: #041a20; color: #00d4ff; }
+
+/* ── HTTP STATUS indicator ── */
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  display: inline-block; margin-right: 4px;
+  background: var(--text3);
+}
+.s-2xx .status-dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.s-3xx .status-dot { background: var(--cyan);  box-shadow: 0 0 6px var(--cyan); }
+.s-4xx .status-dot { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+.s-5xx .status-dot { background: var(--red);   box-shadow: 0 0 6px var(--red); }
+
+/* ── RESPONSE PANEL ── */
+.response-panel {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+.rp-tabs {
+  display: flex; border-bottom: 1px solid var(--border);
+}
+.rp-tab {
+  padding: 8px 14px; font-family: var(--mono); font-size: 10px;
+  color: var(--text3); cursor: pointer; border-right: 1px solid var(--border);
+  transition: color .2s, background .2s;
+}
+.rp-tab.active { color: var(--accent); background: var(--surface2); }
+.rp-body { padding: 10px 14px; font-family: var(--mono); font-size: 10px; line-height: 1.7; min-height: 80px; }
+
+/* JSON syntax colors */
+.j-key  { color: var(--cyan); }
+.j-str  { color: var(--green); }
+.j-num  { color: var(--amber); }
+.j-bool { color: var(--purple); }
+.j-null { color: var(--text3); }
+
+/* ── HEADERS TABLE ── */
+.hdr-table { width: 100%; font-size: 10px; font-family: var(--mono); }
+.hdr-table tr { border-bottom: 1px solid var(--border); }
+.hdr-table td { padding: 3px 6px; }
+.hdr-table td:first-child { color: var(--cyan); width: 45%; }
+.hdr-table td:last-child  { color: var(--text2); }
+
+/* ── TIMELINE BAR ── */
+.timeline-bar {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin-top: 8px;
+}
+.tl-label { font-size: 9px; font-weight: 700; color: var(--text3); letter-spacing: .1em; text-transform: uppercase; margin-bottom: 8px; }
+.tl-track { position: relative; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin-bottom: 6px; }
+.tl-fill  { height: 100%; border-radius: 4px; width: 0; transition: width .4s ease; }
+.tl-segs  { display: flex; gap: 6px; flex-wrap: wrap; }
+.tl-seg   { display: flex; align-items: center; gap: 4px; font-size: 9px; font-family: var(--mono); color: var(--text3); }
+.tl-dot   { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+.tl-ms    { font-weight: 700; color: var(--text2); }
+
+/* ── SERVER CARD specifics ── */
+.server-layers { display: flex; flex-direction: column; gap: 5px; }
+.sl {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 5px 10px;
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10px; transition: border-color .3s, background .3s;
+}
+.sl.active { border-color: var(--accent); background: #0a1228; }
+.sl.done   { border-color: var(--green);  background: #061210; }
+.sl-icon { font-size: 13px; }
+.sl-name { font-weight: 600; color: var(--text2); flex: 1; }
+.sl-time { font-family: var(--mono); font-size: 9px; color: var(--text3); }
+
+/* ── FLOATING PACKETS ── */
+.pkt {
+  position: fixed; z-index: 300;
+  pointer-events: none;
+  border-radius: 20px;
+  font-family: var(--mono); font-size: 10px; font-weight: 700;
+  display: flex; align-items: center; gap: 5px;
+  padding: 4px 12px;
+  white-space: nowrap;
+  border: 1px solid rgba(255,255,255,.12);
+  box-shadow: 0 4px 20px rgba(0,0,0,.6), 0 0 14px rgba(79,142,255,.2);
+}
+
+/* ── LATENCY GAUGE ── */
+.lat-gauge {
+  background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: 12px; padding: 10px 14px;
+}
+.lg-title { font-size: 9px; font-weight: 700; color: var(--text3); letter-spacing: .1em; text-transform: uppercase; margin-bottom: 8px; }
+.lg-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; font-size: 9px; }
+.lg-label { font-family: var(--mono); color: var(--text3); width: 80px; flex-shrink: 0; }
+.lg-bar   { flex: 1; height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.lg-fill  { height: 100%; border-radius: 3px; transition: width .6s ease; }
+.lg-val   { font-family: var(--mono); font-weight: 700; color: var(--text2); width: 42px; text-align: right; flex-shrink: 0; }
+
+/* ── RIGHT PANEL ── */
+.right-col {
+  display: flex; flex-direction: column; gap: 10px;
+}
+
+/* ── LOG ── */
+.log-wrap {
+  background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: 12px; overflow: hidden; margin-bottom: 12px;
+}
+.log-hdr {
+  padding: 7px 14px; font-size: 10px; font-weight: 700;
+  color: var(--text3); border-bottom: 1px solid var(--border);
+  letter-spacing: .07em; text-transform: uppercase;
+  font-family: var(--mono);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.log-body {
+  height: 76px; overflow-y: auto; padding: 6px 14px;
+  font-family: var(--mono); font-size: 11px; line-height: 1.7;
+}
+.log-body::-webkit-scrollbar { width: 4px; }
+.log-body::-webkit-scrollbar-track { background: transparent; }
+.log-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+@keyframes li { from { opacity:0; transform:translateY(3px); } to { opacity:1; } }
+.le { animation: li .2s ease; }
+.lc { color: var(--accent); }
+.lg-c { color: var(--green); }
+.lw { color: var(--amber); }
+.le-r { color: var(--red); }
+.lp { color: var(--purple); }
+.lcyan { color: var(--cyan); }
+
+/* ── CONTROLS ── */
+.controls { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-bottom: 10px; }
+.btn {
+  font-family: var(--display); font-size: 12px; font-weight: 600;
+  padding: 8px 16px; border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface); color: var(--text2);
+  cursor: pointer; transition: all .15s; letter-spacing: .01em;
+}
+.btn:hover { background: var(--surface2); border-color: var(--border2); color: var(--text); }
+.btn.active { background: #0e1e3a; border-color: var(--accent); color: var(--accent); }
+.btn.green  { border-color: #14532d; color: var(--green); }
+.btn.green:hover { background: #061210; }
+.btn.red    { border-color: #450a0a; color: var(--red); }
+.btn.red:hover { background: #160610; }
+.btn.amber  { border-color: #451a03; color: var(--amber); }
+.btn.amber:hover { background: #130d04; }
+.btn.purple { border-color: #2d1b69; color: var(--purple); }
+.btn.purple:hover { background: #130d2a; }
+
+.speed-row {
+  display: flex; align-items: center; gap: 8px; justify-content: center;
+  font-family: var(--mono); font-size: 11px; color: var(--text3);
+}
+input[type=range] { width: 80px; accent-color: var(--accent); }
+
+/* ── FLASHES ── */
+@keyframes glow-green { 0%,100%{box-shadow:none} 50%{box-shadow:0 0 20px rgba(34,212,122,.4)} }
+@keyframes glow-red   { 0%,100%{box-shadow:none} 50%{box-shadow:0 0 20px rgba(255,77,106,.4)} }
+@keyframes glow-blue  { 0%,100%{box-shadow:none} 50%{box-shadow:0 0 20px rgba(79,142,255,.4)} }
+.glow-g { animation: glow-green .5s ease; }
+.glow-r { animation: glow-red   .5s ease; }
+.glow-b { animation: glow-blue  .5s ease; }
+
+/* ── METHOD SELECTOR ── */
+.method-sel {
+  display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px;
+}
+.ms-btn {
+  font-family: var(--mono); font-size: 10px; font-weight: 700;
+  padding: 4px 10px; border-radius: 6px; border: 1px solid;
+  cursor: pointer; transition: opacity .15s;
+  opacity: .45;
+}
+.ms-btn.sel { opacity: 1; }
+.ms-get    { border-color: #22d47a; color: #22d47a; background: #0a2a14; }
+.ms-post   { border-color: #9b72f5; color: #9b72f5; background: #1a1040; }
+.ms-put    { border-color: #f5a623; color: #f5a623; background: #1a1004; }
+.ms-delete { border-color: #ff4d6a; color: #ff4d6a; background: #1a0610; }
+
+.url-row {
+  display: flex; gap: 6px; align-items: center; margin-bottom: 8px;
+}
+.url-field {
+  flex: 1; background: var(--bg); border: 1px solid var(--border2);
+  border-radius: 7px; padding: 6px 10px;
+  font-family: var(--mono); font-size: 10px; color: var(--cyan);
+  outline: none;
+}
+.url-field:focus { border-color: var(--accent); }
+.send-btn {
+  background: var(--accent); color: #fff;
+  border: none; border-radius: 7px;
+  padding: 6px 14px; font-family: var(--display);
+  font-size: 11px; font-weight: 700; cursor: pointer;
+  transition: background .15s;
+}
+.send-btn:hover { background: #6ba3ff; }
+.send-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ── ACTIVE REQUEST BADGE ── */
+@keyframes pulse-ring {
+  0%   { transform:scale(1);   opacity:.8; }
+  100% { transform:scale(1.8); opacity:0; }
+}
+.pulse-wrap { position:relative; display:inline-flex; }
+.pulse-ring {
+  position:absolute; inset:-4px; border-radius:50%;
+  border:2px solid var(--accent); opacity:0;
+}
+.pulse-ring.go { animation: pulse-ring .8s ease-out infinite; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- HEADER -->
+  <div class="hd">
+    <h1>API Call</h1>
+    <span class="tag">lifecycle animation</span>
+  </div>
+  <div class="sub">// client → DNS → TCP → TLS → HTTP → server → response → client</div>
+
+  <!-- STATS -->
+  <div class="stats">
+    <div class="sp">Requests <b id="st-req">0</b></div>
+    <div class="sp" style="border-color:#14532d">✓ Success <b id="st-ok" style="color:var(--green)">0</b></div>
+    <div class="sp" style="border-color:#450a0a">✗ Errors <b id="st-err" style="color:var(--red)">0</b></div>
+    <div class="sp">Avg Latency <b id="st-lat">—</b></div>
+    <div class="sp">Last Status <b id="st-status">—</b></div>
+  </div>
+
+  <!-- MAIN STAGE -->
+  <div class="stage">
+
+    <!-- LEFT: CLIENT -->
+    <div class="endpoint-card" id="client-card">
+      <div class="ec-header">
+        <div class="ec-icon">💻</div>
+        <div>
+          <div class="ec-label">Client</div>
+          <div class="ec-sub">browser / app</div>
+        </div>
+      </div>
+      <div class="ec-body">
+        <!-- Method selector -->
+        <div class="method-sel">
+          <div class="ms-btn ms-get sel" onclick="setMethod('GET')">GET</div>
+          <div class="ms-btn ms-post" onclick="setMethod('POST')">POST</div>
+          <div class="ms-btn ms-put" onclick="setMethod('PUT')">PUT</div>
+          <div class="ms-btn ms-delete" onclick="setMethod('DELETE')">DEL</div>
+        </div>
+        <!-- URL field -->
+        <div class="url-row">
+          <input class="url-field" id="url-field" value="api.example.com/users/42">
+          <button class="send-btn" id="send-btn" onclick="fireRequest()">Send →</button>
+        </div>
+        <!-- Code preview -->
+        <div class="code-block" id="code-preview">
+          <span class="kw">fetch</span>(<span class="str">'https://api.example.com/users/42'</span>, {<br>
+          &nbsp;&nbsp;<span class="hl">method</span>: <span class="str">'GET'</span>,<br>
+          &nbsp;&nbsp;<span class="hl">headers</span>: {<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;<span class="str">'Authorization'</span>: <span class="str">'Bearer &lt;token&gt;'</span><br>
+          &nbsp;&nbsp;}<br>
+          })
+        </div>
+        <!-- Status indicator -->
+        <div id="client-status" style="font-family:var(--mono);font-size:10px;color:var(--text3);">
+          waiting for request…
+        </div>
+      </div>
+    </div>
+
+    <!-- CENTER: PIPELINE -->
+    <div class="pipeline">
+
+      <!-- Pipe column headers -->
+      <div class="pipe-vis">
+        <div class="pipe-cols">
+          <div class="pc-head">Layer</div>
+          <div class="pc-head">Detail</div>
+          <div class="pc-head">Method</div>
+          <div class="pc-head">Status</div>
+        </div>
+        <div class="pipe-steps" id="pipe-steps">
+
+          <div class="ps" id="st-dns">
+            <div class="ps-name"><span class="ps-icon">🌍</span>DNS Lookup</div>
+            <div class="ps-detail">Resolve api.example.com<br>→ 104.21.48.1</div>
+            <div class="ps-method m-get" id="ps-method-0">GET</div>
+            <div class="ps-status" id="ps-stat-0">—</div>
+          </div>
+
+          <div class="ps" id="st-tcp">
+            <div class="ps-name"><span class="ps-icon">🤝</span>TCP Handshake</div>
+            <div class="ps-detail">SYN → SYN-ACK → ACK<br>Port 443</div>
+            <div class="ps-method m-get" id="ps-method-1">GET</div>
+            <div class="ps-status" id="ps-stat-1">—</div>
+          </div>
+
+          <div class="ps" id="st-tls">
+            <div class="ps-name"><span class="ps-icon">🔒</span>TLS Handshake</div>
+            <div class="ps-detail">ClientHello → ServerHello<br>TLS 1.3 · AES-256-GCM</div>
+            <div class="ps-method m-get" id="ps-method-2">GET</div>
+            <div class="ps-status" id="ps-stat-2">—</div>
+          </div>
+
+          <div class="ps" id="st-req-send">
+            <div class="ps-name"><span class="ps-icon">📤</span>Send Request</div>
+            <div class="ps-detail" id="ps-detail-3">HTTP/2 GET /users/42<br>Headers + body serialized</div>
+            <div class="ps-method m-get" id="ps-method-3">GET</div>
+            <div class="ps-status" id="ps-stat-3">—</div>
+          </div>
+
+          <div class="ps" id="st-server">
+            <div class="ps-name"><span class="ps-icon">⚙️</span>Server Processing</div>
+            <div class="ps-detail">Auth → Route → DB → Serialize<br>Application logic</div>
+            <div class="ps-method m-get" id="ps-method-4">GET</div>
+            <div class="ps-status" id="ps-stat-4">—</div>
+          </div>
+
+          <div class="ps" id="st-resp">
+            <div class="ps-name"><span class="ps-icon">📥</span>Receive Response</div>
+            <div class="ps-detail">HTTP/2 200 OK<br>Content-Type: application/json</div>
+            <div class="ps-method m-get" id="ps-method-5">GET</div>
+            <div class="ps-status" id="ps-stat-5">—</div>
+          </div>
+
+          <div class="ps" id="st-parse">
+            <div class="ps-name"><span class="ps-icon">🔄</span>Parse & Deliver</div>
+            <div class="ps-detail">JSON.parse() · update state<br>Re-render UI</div>
+            <div class="ps-method m-get" id="ps-method-6">GET</div>
+            <div class="ps-status" id="ps-stat-6">—</div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Timeline latency bar -->
+      <div class="timeline-bar">
+        <div class="tl-label">Request Timeline</div>
+        <div class="tl-track"><div class="tl-fill" id="tl-fill" style="background:linear-gradient(90deg,var(--accent),var(--cyan));"></div></div>
+        <div class="tl-segs" id="tl-segs">
+          <div class="tl-seg"><div class="tl-dot" style="background:#4f8eff;"></div>DNS <span class="tl-ms" id="tl-dns">—</span></div>
+          <div class="tl-seg"><div class="tl-dot" style="background:#00d4ff;"></div>TCP <span class="tl-ms" id="tl-tcp">—</span></div>
+          <div class="tl-seg"><div class="tl-dot" style="background:#9b72f5;"></div>TLS <span class="tl-ms" id="tl-tls">—</span></div>
+          <div class="tl-seg"><div class="tl-dot" style="background:#22d47a;"></div>TTFB <span class="tl-ms" id="tl-ttfb">—</span></div>
+          <div class="tl-seg"><div class="tl-dot" style="background:#f5a623;"></div>Total <span class="tl-ms" id="tl-total">—</span></div>
+        </div>
+      </div>
+
+      <!-- Response viewer -->
+      <div class="response-panel" id="response-panel">
+        <div class="rp-tabs">
+          <div class="rp-tab active" id="tab-body" onclick="showTab('body')">Response Body</div>
+          <div class="rp-tab" id="tab-headers" onclick="showTab('headers')">Headers</div>
+          <div class="rp-tab" id="tab-raw" onclick="showTab('raw')">Raw</div>
+        </div>
+        <div class="rp-body" id="rp-body">
+          <span style="color:var(--text3);">// response will appear here…</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT: SERVER -->
+    <div class="right-col">
+
+      <div class="endpoint-card" id="server-card">
+        <div class="ec-header">
+          <div class="ec-icon">🖥️</div>
+          <div>
+            <div class="ec-label">Origin Server</div>
+            <div class="ec-sub">api.example.com</div>
+          </div>
+        </div>
+        <div class="ec-body">
+          <div class="server-layers" id="server-layers">
+            <div class="sl" id="sl-0"><span class="sl-icon">🔐</span><span class="sl-name">Auth / JWT</span><span class="sl-time" id="slt-0">—</span></div>
+            <div class="sl" id="sl-1"><span class="sl-icon">🗺️</span><span class="sl-name">Router</span><span class="sl-time" id="slt-1">—</span></div>
+            <div class="sl" id="sl-2"><span class="sl-icon">📋</span><span class="sl-name">Middleware</span><span class="sl-time" id="slt-2">—</span></div>
+            <div class="sl" id="sl-3"><span class="sl-icon">🗄️</span><span class="sl-name">DB Query</span><span class="sl-time" id="slt-3">—</span></div>
+            <div class="sl" id="sl-4"><span class="sl-icon">📦</span><span class="sl-name">Serialize</span><span class="sl-time" id="slt-4">—</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Latency gauge -->
+      <div class="lat-gauge">
+        <div class="lg-title">Latency Breakdown</div>
+        <div class="lg-row"><span class="lg-label">DNS</span><div class="lg-bar"><div class="lg-fill" id="lf-dns" style="background:#4f8eff;width:0%;"></div></div><span class="lg-val" id="lv-dns">—</span></div>
+        <div class="lg-row"><span class="lg-label">TCP</span><div class="lg-bar"><div class="lg-fill" id="lf-tcp" style="background:#00d4ff;width:0%;"></div></div><span class="lg-val" id="lv-tcp">—</span></div>
+        <div class="lg-row"><span class="lg-label">TLS</span><div class="lg-bar"><div class="lg-fill" id="lf-tls" style="background:#9b72f5;width:0%;"></div></div><span class="lg-val" id="lv-tls">—</span></div>
+        <div class="lg-row"><span class="lg-label">Server</span><div class="lg-bar"><div class="lg-fill" id="lf-srv" style="background:#22d47a;width:0%;"></div></div><span class="lg-val" id="lv-srv">—</span></div>
+        <div class="lg-row"><span class="lg-label">Transfer</span><div class="lg-bar"><div class="lg-fill" id="lf-xfr" style="background:#f5a623;width:0%;"></div></div><span class="lg-val" id="lv-xfr">—</span></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- LOG -->
+  <div class="log-wrap">
+    <div class="log-hdr">
+      <span>Network Log</span>
+      <span style="color:var(--text3);">real-time · chronological</span>
+    </div>
+    <div class="log-body" id="log"></div>
+  </div>
+
+  <!-- CONTROLS -->
+  <div class="controls">
+    <button class="btn green"  onclick="setPreset('get')">GET /users</button>
+    <button class="btn purple" onclick="setPreset('post')">POST /users</button>
+    <button class="btn amber"  onclick="setPreset('put')">PUT /users/42</button>
+    <button class="btn red"    onclick="setPreset('delete')">DELETE /users/42</button>
+    <button class="btn red"    onclick="setPreset('error')">💥 500 Error</button>
+    <button class="btn amber"  onclick="setPreset('timeout')">⏱ Timeout</button>
+    <button class="btn"        onclick="setPreset('auth')">🔐 Auth Error</button>
+    <button class="btn"        onclick="setPreset('slow')">🐢 Slow Server</button>
+    <button class="btn active" id="auto-btn" onclick="toggleAuto()">▶ Auto Demo</button>
+  </div>
+  <div class="speed-row" style="margin-top:10px;">
+    Speed <input type="range" min="0.3" max="3" step="0.1" value="1" oninput="spd=parseFloat(this.value)">
+  </div>
+
+</div>
+
+<!-- Packet container -->
+<div id="pkts" style="position:fixed;inset:0;pointer-events:none;z-index:200;"></div>
+
+<script>
+let spd=1, autoTimer=null, busy=false;
+let totalReq=0, okReq=0, errReq=0;
+let latencies=[];
+let currentMethod='GET';
+let pipeTimers=[];
+let currentTab='body';
+
+/* ══ PRESETS ══ */
+const PRESETS = {
+  get: {
+    method:'GET', url:'api.example.com/users/42',
+    status:200, statusText:'200 OK',
+    dns:18, tcp:32, tls:48, server:85, transfer:12,
+    serverLayers:[12,6,8,55,4],
+    responseBody: `{\n  <span class="j-key">"id"</span>: <span class="j-num">42</span>,\n  <span class="j-key">"name"</span>: <span class="j-str">"Jane Doe"</span>,\n  <span class="j-key">"email"</span>: <span class="j-str">"jane@example.com"</span>,\n  <span class="j-key">"role"</span>: <span class="j-str">"admin"</span>,\n  <span class="j-key">"created_at"</span>: <span class="j-str">"2024-01-15T10:30:00Z"</span>\n}`,
+    rawHeaders:'HTTP/2 200 OK\nContent-Type: application/json\nX-Request-Id: a1b2c3d4\nCache-Control: max-age=300\nContent-Length: 142',
+    headersTable:[['content-type','application/json'],['x-request-id','a1b2c3d4e5f6'],['cache-control','max-age=300'],['x-ratelimit-remaining','98'],['content-length','142']],
+    code:`<span class="kw">const</span> res = <span class="kw">await</span> <span class="fn">fetch</span>(<span class="str">'https://api.example.com/users/42'</span>);\n<span class="kw">const</span> data = <span class="kw">await</span> res.<span class="fn">json</span>(); <span class="cmt">// { id: 42, name: "Jane" }</span>`,
+    logs:[
+      ['lc','[DNS] Resolving api.example.com → 104.21.48.1 (18ms)'],
+      ['lcyan','[TCP] SYN → SYN-ACK → ACK — connection established (32ms)'],
+      ['lp','[TLS] ClientHello, ServerHello, Certificate, Finished — TLS 1.3 (48ms)'],
+      ['lc','[HTTP/2] GET /users/42 — headers: Authorization, Accept'],
+      ['lg-c','[Server] Auth OK · Route matched · DB query: 55ms'],
+      ['lg-c','[Response] 200 OK — 142 bytes — Content-Type: application/json'],
+      ['lg-c','[Client] JSON parsed — UI updated in 3ms ✓'],
+    ]
+  },
+  post: {
+    method:'POST', url:'api.example.com/users',
+    status:201, statusText:'201 Created',
+    dns:14, tcp:28, tls:42, server:120, transfer:18,
+    serverLayers:[10,5,14,85,6],
+    responseBody:`{\n  <span class="j-key">"id"</span>: <span class="j-num">101</span>,\n  <span class="j-key">"name"</span>: <span class="j-str">"New User"</span>,\n  <span class="j-key">"email"</span>: <span class="j-str">"new@example.com"</span>,\n  <span class="j-key">"created_at"</span>: <span class="j-str">"2024-12-01T09:00:00Z"</span>\n}`,
+    rawHeaders:'HTTP/2 201 Created\nContent-Type: application/json\nLocation: /users/101\nX-Request-Id: x9y8z7w6',
+    headersTable:[['content-type','application/json'],['location','/users/101'],['x-request-id','x9y8z7w6'],['content-length','118']],
+    code:`<span class="kw">const</span> res = <span class="kw">await</span> <span class="fn">fetch</span>(<span class="str">'/users'</span>, {\n  <span class="hl">method</span>: <span class="str">'POST'</span>,\n  <span class="hl">body</span>: <span class="fn">JSON.stringify</span>({ name, email })\n});`,
+    logs:[
+      ['lc','[DNS] api.example.com resolved (14ms)'],
+      ['lcyan','[TCP] Handshake complete (28ms)'],
+      ['lp','[TLS] 1.3 Negotiated (42ms)'],
+      ['lc','[HTTP/2] POST /users — body: { name, email, password_hash }'],
+      ['lw','[Server] Validate schema → INSERT INTO users → 120ms'],
+      ['lg-c','[Response] 201 Created — Location: /users/101'],
+      ['lg-c','[Client] User created, redirecting to /users/101 ✓'],
+    ]
+  },
+  put: {
+    method:'PUT', url:'api.example.com/users/42',
+    status:200, statusText:'200 OK',
+    dns:10, tcp:25, tls:38, server:95, transfer:10,
+    serverLayers:[8,4,10,70,3],
+    responseBody:`{\n  <span class="j-key">"id"</span>: <span class="j-num">42</span>,\n  <span class="j-key">"name"</span>: <span class="j-str">"Jane Smith"</span>,\n  <span class="j-key">"updated_at"</span>: <span class="j-str">"2024-12-01T12:00:00Z"</span>,\n  <span class="j-key">"status"</span>: <span class="j-str">"updated"</span>\n}`,
+    rawHeaders:'HTTP/2 200 OK\nContent-Type: application/json\nX-Request-Id: m3n4o5p6',
+    headersTable:[['content-type','application/json'],['x-request-id','m3n4o5p6'],['content-length','108']],
+    code:`<span class="kw">const</span> res = <span class="kw">await</span> <span class="fn">fetch</span>(<span class="str">'/users/42'</span>, {\n  <span class="hl">method</span>: <span class="str">'PUT'</span>,\n  <span class="hl">body</span>: <span class="fn">JSON.stringify</span>({ name: <span class="str">'Jane Smith'</span> })\n});`,
+    logs:[
+      ['lc','[DNS] Cache hit — no lookup needed (10ms)'],
+      ['lcyan','[TCP] Handshake (25ms)'],
+      ['lp','[TLS] Session resumed (38ms)'],
+      ['lc','[HTTP/2] PUT /users/42 — full replace payload'],
+      ['lw','[Server] Auth OK · UPDATE users SET name=? WHERE id=42'],
+      ['lg-c','[Response] 200 OK — resource updated'],
+      ['lg-c','[Client] State updated ✓'],
+    ]
+  },
+  delete: {
+    method:'DELETE', url:'api.example.com/users/42',
+    status:204, statusText:'204 No Content',
+    dns:12, tcp:22, tls:35, server:60, transfer:4,
+    serverLayers:[8,4,6,42,0],
+    responseBody:`<span style="color:var(--text3);">// 204 No Content — empty response body\n// Resource successfully deleted</span>`,
+    rawHeaders:'HTTP/2 204 No Content\nX-Request-Id: d1e2f3g4',
+    headersTable:[['x-request-id','d1e2f3g4'],['content-length','0']],
+    code:`<span class="kw">const</span> res = <span class="kw">await</span> <span class="fn">fetch</span>(<span class="str">'/users/42'</span>, {\n  <span class="hl">method</span>: <span class="str">'DELETE'</span>\n});\n<span class="cmt">// res.status === 204</span>`,
+    logs:[
+      ['lc','[DNS] Resolved (12ms)'],
+      ['lcyan','[TCP] Handshake (22ms)'],
+      ['lp','[TLS] Negotiated (35ms)'],
+      ['lc','[HTTP/2] DELETE /users/42'],
+      ['lw','[Server] Auth OK · DELETE FROM users WHERE id=42'],
+      ['lg-c','[Response] 204 No Content'],
+      ['lg-c','[Client] Resource deleted, removed from UI ✓'],
+    ]
+  },
+  error: {
+    method:'GET', url:'api.example.com/crash',
+    status:500, statusText:'500 Internal Server Error',
+    dns:15, tcp:28, tls:40, server:320, transfer:8,
+    serverLayers:[10,5,10,280,15],
+    responseBody:`{\n  <span class="j-key">"error"</span>: <span class="j-str">"Internal Server Error"</span>,\n  <span class="j-key">"message"</span>: <span class="j-str">"Unexpected database exception"</span>,\n  <span class="j-key">"request_id"</span>: <span class="j-str">"err-8f3a2b"</span>,\n  <span class="j-key">"status"</span>: <span class="j-num">500</span>\n}`,
+    rawHeaders:'HTTP/2 500 Internal Server Error\nContent-Type: application/json\nX-Request-Id: err-8f3a2b',
+    headersTable:[['content-type','application/json'],['x-request-id','err-8f3a2b'],['retry-after','30']],
+    code:`<span class="kw">try</span> {\n  <span class="kw">const</span> res = <span class="kw">await</span> <span class="fn">fetch</span>(<span class="str">'/api/crash'</span>);\n  <span class="kw">if</span> (!res.ok) <span class="kw">throw new</span> <span class="fn">Error</span>(<span class="str">\`HTTP \${res.status}\`</span>);\n} <span class="kw">catch</span>(e) { <span class="fn">console.error</span>(e); }`,
+    isError:true,
+    logs:[
+      ['lc','[DNS] Resolved (15ms)'],
+      ['lcyan','[TCP] Connected (28ms)'],
+      ['lp','[TLS] Negotiated (40ms)'],
+      ['lc','[HTTP/2] GET /crash'],
+      ['le-r','[Server] DB connection pool exhausted — exception thrown'],
+      ['le-r','[Response] 500 Internal Server Error'],
+      ['le-r','[Client] Error caught — displaying error state ✗'],
+    ]
+  },
+  timeout: {
+    method:'GET', url:'api.example.com/slow-endpoint',
+    status:'TIMEOUT', statusText:'Request Timeout',
+    dns:16, tcp:30, tls:45, server:5000, transfer:0,
+    serverLayers:[10,5,8,4980,0],
+    responseBody:`<span style="color:var(--red);">// ⏱ Request timed out after 5000ms\n// No response received from server\n// Client-side AbortController fired</span>`,
+    rawHeaders:'// No response headers — connection timed out',
+    headersTable:[],
+    code:`<span class="kw">const</span> ctrl = <span class="kw">new</span> <span class="fn">AbortController</span>();\n<span class="fn">setTimeout</span>(() => ctrl.<span class="fn">abort</span>(), <span class="num">5000</span>);\n<span class="kw">const</span> res = <span class="kw">await</span> <span class="fn">fetch</span>(url, { signal: ctrl.signal });`,
+    isTimeout:true,
+    logs:[
+      ['lc','[DNS] Resolved (16ms)'],
+      ['lcyan','[TCP] Connected (30ms)'],
+      ['lp','[TLS] Negotiated (45ms)'],
+      ['lc','[HTTP/2] GET /slow-endpoint'],
+      ['lw','[Server] Processing… (hanging — no response)'],
+      ['le-r','[Client] AbortController fired — 5000ms exceeded'],
+      ['le-r','[Error] AbortError: The operation was aborted ✗'],
+    ]
+  },
+  auth: {
+    method:'GET', url:'api.example.com/admin/data',
+    status:401, statusText:'401 Unauthorized',
+    dns:12, tcp:24, tls:36, server:8, transfer:5,
+    serverLayers:[5,0,0,0,3],
+    responseBody:`{\n  <span class="j-key">"error"</span>: <span class="j-str">"Unauthorized"</span>,\n  <span class="j-key">"message"</span>: <span class="j-str">"JWT token expired or invalid"</span>,\n  <span class="j-key">"code"</span>: <span class="j-str">"TOKEN_EXPIRED"</span>\n}`,
+    rawHeaders:'HTTP/2 401 Unauthorized\nWWW-Authenticate: Bearer realm="api"\nContent-Type: application/json',
+    headersTable:[['www-authenticate','Bearer realm="api"'],['content-type','application/json'],['x-request-id','auth-err-99']],
+    code:`<span class="cmt">// 401 — token expired, refresh and retry</span>\n<span class="kw">if</span> (res.status === <span class="num">401</span>) {\n  <span class="kw">await</span> <span class="fn">refreshToken</span>();\n  <span class="kw">return</span> <span class="fn">retry</span>(request);\n}`,
+    isError:true,
+    logs:[
+      ['lc','[DNS] Resolved (12ms)'],
+      ['lcyan','[TCP] Connected (24ms)'],
+      ['lp','[TLS] Negotiated (36ms)'],
+      ['lc','[HTTP/2] GET /admin/data — Authorization: Bearer eyJ...'],
+      ['le-r','[Auth] JWT signature invalid / token expired'],
+      ['le-r','[Response] 401 Unauthorized — WWW-Authenticate: Bearer'],
+      ['le-r','[Client] Triggering token refresh and retry ✗'],
+    ]
+  },
+  slow: {
+    method:'GET', url:'api.example.com/reports/annual',
+    status:200, statusText:'200 OK',
+    dns:20, tcp:35, tls:55, server:1800, transfer:240,
+    serverLayers:[15,8,20,1720,37],
+    responseBody:`{\n  <span class="j-key">"report"</span>: <span class="j-str">"annual_2024"</span>,\n  <span class="j-key">"rows"</span>: <span class="j-num">48250</span>,\n  <span class="j-key">"generated_ms"</span>: <span class="j-num">1800</span>,\n  <span class="j-key">"size_bytes"</span>: <span class="j-num">524288</span>\n}`,
+    rawHeaders:'HTTP/2 200 OK\nContent-Type: application/json\nContent-Length: 524288\nServer-Timing: db;dur=1720',
+    headersTable:[['content-type','application/json'],['content-length','524288'],['server-timing','db;dur=1720'],['transfer-encoding','chunked']],
+    code:`<span class="cmt">// Slow query — consider caching or pagination</span>\n<span class="kw">const</span> res = <span class="kw">await</span> <span class="fn">fetch</span>(<span class="str">'/reports/annual'</span>);\n<span class="cmt">// Server-Timing: db;dur=1720ms ⚠</span>`,
+    isSlow:true,
+    logs:[
+      ['lc','[DNS] Resolved (20ms)'],
+      ['lcyan','[TCP] Connected (35ms)'],
+      ['lp','[TLS] Negotiated (55ms)'],
+      ['lc','[HTTP/2] GET /reports/annual'],
+      ['lw','[Server] ⚠ Heavy DB query — 48250 rows — 1800ms'],
+      ['lw','[Response] 200 OK — 512KB payload — chunked transfer'],
+      ['lw','[Client] Parsed 512KB — consider pagination ⚠'],
+    ]
+  }
+};
+
+let currentPreset = PRESETS.get;
+
+function d(ms){ return ms/spd; }
+
+/* ══ LOGGING ══ */
+function addLog(cls, msg){
+  const ts=new Date().toLocaleTimeString('en-GB',{hour12:false});
+  const el=document.createElement('div');
+  el.className='le';
+  el.innerHTML=`<span style="color:var(--text3)">${ts}</span> <span class="${cls}">${msg}</span>`;
+  const lb=document.getElementById('log');
+  lb.appendChild(el); lb.scrollTop=lb.scrollHeight;
+  if(lb.children.length>80) lb.removeChild(lb.firstChild);
+}
+
+/* ══ STATS ══ */
+function updateStats(){
+  document.getElementById('st-req').textContent=totalReq;
+  document.getElementById('st-ok').textContent=okReq;
+  document.getElementById('st-err').textContent=errReq;
+  const avg = latencies.length ? Math.round(latencies.reduce((a,b)=>a+b)/latencies.length) : null;
+  document.getElementById('st-lat').textContent = avg ? avg+'ms' : '—';
+}
+
+/* ══ PIPELINE HELPERS ══ */
+function clearPipe(){
+  pipeTimers.forEach(t=>clearTimeout(t));
+  pipeTimers=[];
+  for(let i=0;i<7;i++){
+    const ids=['st-dns','st-tcp','st-tls','st-req-send','st-server','st-resp','st-parse'];
+    const el=document.getElementById(ids[i]);
+    if(el){ el.className='ps'; }
+    const st=document.getElementById('ps-stat-'+i);
+    if(st){ st.textContent='—'; st.style.color=''; }
+  }
+  for(let i=0;i<5;i++){
+    const sl=document.getElementById('sl-'+i);
+    if(sl) sl.className='sl';
+    const slt=document.getElementById('slt-'+i);
+    if(slt) slt.textContent='—';
+  }
+  // Reset timeline
+  document.getElementById('tl-fill').style.width='0%';
+  ['dns','tcp','tls','ttfb','total'].forEach(k=>{ document.getElementById('tl-'+k).textContent='—'; });
+  ['dns','tcp','tls','srv','xfr'].forEach(k=>{
+    document.getElementById('lf-'+k).style.width='0%';
+    document.getElementById('lv-'+k).textContent='—';
+  });
+  document.getElementById('rp-body').innerHTML='<span style="color:var(--text3);">// response will appear here…</span>';
+  document.getElementById('client-status').style.color='var(--text3)';
+  document.getElementById('client-status').textContent='waiting for request…';
+  document.getElementById('st-status').textContent='—';
+  document.getElementById('st-status').style.color='';
+}
+
+function stepIds(){ return ['st-dns','st-tcp','st-tls','st-req-send','st-server','st-resp','st-parse']; }
+
+function lightStep(idx, cls, delay){
+  const t=setTimeout(()=>{
+    const el=document.getElementById(stepIds()[idx]);
+    if(el) el.className='ps '+cls;
+  }, d(delay));
+  pipeTimers.push(t);
+}
+
+function setStepStat(idx, text, color, delay){
+  const t=setTimeout(()=>{
+    const el=document.getElementById('ps-stat-'+idx);
+    if(el){ el.textContent=text; if(color) el.style.color=color; }
+  }, d(delay));
+  pipeTimers.push(t);
+}
+
+/* ══ PACKET ANIMATION ══ */
+function flyPkt(fromEl, toEl, opts, onDone){
+  if(!fromEl||!toEl) return;
+  const fr=fromEl.getBoundingClientRect(), to=toEl.getBoundingClientRect();
+  const fx=fr.left+fr.width/2, fy=fr.top+fr.height/2;
+  const tx=to.left+to.width/2, ty=to.top+to.height/2;
+  const pkt=document.createElement('div');
+  pkt.className='pkt';
+  const w=opts.w||80, h=26;
+  pkt.style.cssText=`background:${opts.bg};border-color:${opts.border};color:${opts.color};width:${w}px;height:${h}px;left:${fx-w/2}px;top:${fy-h/2}px;opacity:1;`;
+  pkt.innerHTML=opts.label;
+  document.getElementById('pkts').appendChild(pkt);
+  const dist=Math.hypot(tx-fx,ty-fy);
+  const dur=Math.max(220, dist/(180*spd)*1000);
+  pkt.animate([
+    {left:(fx-w/2)+'px',top:(fy-h/2)+'px',opacity:1},
+    {left:(tx-w/2)+'px',top:(ty-h/2)+'px',opacity:1}
+  ],{duration:dur,easing:'cubic-bezier(.4,0,.2,1)',fill:'forwards'})
+  .finished.then(()=>{ pkt.remove(); if(onDone) onDone(); });
+}
+
+function glow(el, cls){
+  if(!el) return;
+  el.classList.remove('glow-g','glow-r','glow-b');
+  void el.offsetWidth;
+  el.classList.add(cls);
+  setTimeout(()=>el.classList.remove('glow-g','glow-r','glow-b'),600);
+}
+
+/* ══ UPDATE LATENCY BARS ══ */
+function setLatencyBars(p){
+  const total=p.dns+p.tcp+p.tls+p.server+p.transfer;
+  const pairs=[['dns',p.dns,'#4f8eff'],['tcp',p.tcp,'#00d4ff'],['tls',p.tls,'#9b72f5'],['srv',p.server,'#22d47a'],['xfr',p.transfer,'#f5a623']];
+  pairs.forEach(([k,v,c])=>{
+    document.getElementById('lf-'+k).style.width=Math.round(v/total*100)+'%';
+    document.getElementById('lf-'+k).style.background=c;
+    document.getElementById('lv-'+k).textContent=v+'ms';
+  });
+}
+
+/* ══ TABS ══ */
+function showTab(tab){
+  currentTab=tab;
+  ['body','headers','raw'].forEach(t=>{
+    document.getElementById('tab-'+t).classList.toggle('active',t===tab);
+  });
+}
+
+function setResponseContent(p){
+  if(currentTab==='body')    document.getElementById('rp-body').innerHTML=p.responseBody;
+  else if(currentTab==='headers') document.getElementById('rp-body').innerHTML=buildHeadersTable(p);
+  else document.getElementById('rp-body').textContent=p.rawHeaders;
+}
+
+function buildHeadersTable(p){
+  if(!p.headersTable?.length) return '<span style="color:var(--text3);">// no headers</span>';
+  return '<table class="hdr-table">'+p.headersTable.map(([k,v])=>`<tr><td>${k}</td><td>${v}</td></tr>`).join('')+'</table>';
+}
+
+/* ══ SET METHOD ══ */
+function setMethod(m){
+  currentMethod=m;
+  document.querySelectorAll('.ms-btn').forEach(b=>b.classList.toggle('sel', b.textContent===m||(m==='DELETE'&&b.textContent==='DEL')));
+  const colors={GET:'#22d47a',POST:'#9b72f5',PUT:'#f5a623',DELETE:'#ff4d6a'};
+  document.getElementById('url-field').style.color=colors[m]||'var(--cyan)';
+}
+
+/* ══ PRESETS ══ */
+function setPreset(key){
+  const p=PRESETS[key];
+  if(!p) return;
+  currentPreset=p;
+  setMethod(p.method);
+  document.getElementById('url-field').value=p.url;
+  document.getElementById('code-preview').innerHTML=p.code;
+  // Update method badges in pipeline
+  const mClass={GET:'m-get',POST:'m-post',PUT:'m-put',DELETE:'m-delete'}[p.method]||'m-get';
+  for(let i=0;i<7;i++){
+    const el=document.getElementById('ps-method-'+i);
+    if(el){ el.className='ps-method '+mClass; el.textContent=p.method==='DELETE'?'DEL':p.method; }
+  }
+  if(!busy) fireRequest();
+}
+
+/* ══ FIRE REQUEST ══ */
+function fireRequest(){
+  if(busy) return;
+  busy=true;
+  totalReq++;
+  clearPipe();
+
+  const p=currentPreset;
+  const clientEl=document.getElementById('client-card');
+  const serverEl=document.getElementById('server-card');
+  const pipeEl  =document.getElementById('st-dns');
+
+  document.getElementById('client-status').textContent='sending…';
+  document.getElementById('client-status').style.color='var(--accent)';
+  glow(clientEl,'glow-b');
+
+  const isErr=p.isError||p.isTimeout;
+  const color=isErr?'var(--red)':p.isSlow?'var(--amber)':'var(--green)';
+
+  /* Log all messages with staggered timing */
+  let logBase=0;
+  p.logs.forEach((msg,i)=>{
+    const t=setTimeout(()=>addLog(msg[0],msg[1]), d(logBase + i*320));
+    pipeTimers.push(t);
+    logBase+=0;
+  });
+
+  /* DNS */
+  lightStep(0,'active',0);
+  setStepStat(0,'resolving…','var(--amber)',0);
+  pipeTimers.push(setTimeout(()=>{
+    lightStep(0,'done',0);
+    setStepStat(0,p.dns+'ms','var(--green)',0);
+    document.getElementById('tl-dns').textContent=p.dns+'ms';
+  }, d(p.dns*6)));
+
+  /* TCP */
+  let t=p.dns*6+80;
+  lightStep(1,'active',t);
+  setStepStat(1,'connecting…','var(--amber)',t);
+  pipeTimers.push(setTimeout(()=>{
+    lightStep(1,'done',0);
+    setStepStat(1,p.tcp+'ms','var(--green)',0);
+    document.getElementById('tl-tcp').textContent=p.tcp+'ms';
+  }, d(t+p.tcp*5)));
+
+  /* TLS */
+  t+=p.tcp*5+80;
+  lightStep(2,'active',t);
+  setStepStat(2,'handshaking…','var(--amber)',t);
+  pipeTimers.push(setTimeout(()=>{
+    lightStep(2,'done',0);
+    setStepStat(2,p.tls+'ms','var(--green)',0);
+    document.getElementById('tl-tls').textContent=p.tls+'ms';
+    document.getElementById('tl-fill').style.width='30%';
+  }, d(t+p.tls*4)));
+
+  /* Send request — packet flies */
+  t+=p.tls*4+80;
+  lightStep(3,'active',t);
+  setStepStat(3,'sending…','var(--accent)',t);
+  pipeTimers.push(setTimeout(()=>{
+    // Packet: client → server
+    flyPkt(clientEl, serverEl, {
+      bg:'#0a1228', border:'var(--accent)', color:'var(--accent)',
+      label:`${p.method==='DELETE'?'DEL':p.method} /${p.url.split('/').slice(2).join('/')}`, w:140
+    }, null);
+    lightStep(3,'done',d(300));
+    setStepStat(3,'sent','var(--green)',d(300));
+    document.getElementById('tl-fill').style.width='55%';
+  }, d(t)));
+
+  /* Server processing */
+  t+=500;
+  lightStep(4,'active',t);
+  setStepStat(4,'processing…','var(--amber)',t);
+
+  /* Animate server layers */
+  let slDelay=t+100;
+  p.serverLayers.forEach((ms,i)=>{
+    lightStep_sl(i,'active',slDelay);
+    lightStep_sl(i,'done',slDelay+d(ms*0.6+80));
+    pipeTimers.push(setTimeout(()=>{ document.getElementById('slt-'+i).textContent=ms+'ms'; }, d(slDelay+80)));
+    slDelay+=d(ms*0.6+100);
+  });
+
+  const serverDone=t+d(p.server*0.8)+200;
+  pipeTimers.push(setTimeout(()=>{
+    if(p.isTimeout){
+      lightStep(4,'waiting',0);
+      setStepStat(4,'timeout','var(--red)',0);
+      lightStep(5,'error',d(200));
+      lightStep(6,'error',d(400));
+      setStepStat(5,'—','var(--red)',d(200));
+      setStepStat(6,'—','var(--red)',d(400));
+      document.getElementById('tl-fill').style.width='70%';
+      setTimeout(()=>finish(p, isErr), d(600));
+    } else {
+      lightStep(4,isErr?'error':'done',0);
+      setStepStat(4,p.server+'ms',isErr?'var(--red)':'var(--green)',0);
+      glow(serverEl, isErr?'glow-r':'glow-g');
+      document.getElementById('tl-fill').style.width='75%';
+      document.getElementById('tl-ttfb').textContent=(p.dns+p.tcp+p.tls+p.server)+'ms';
+
+      /* Response packet: server → client */
+      const statusColor=p.status>=500?'var(--red)':p.status>=400?'var(--amber)':p.status>=300?'var(--cyan)':'var(--green)';
+      setTimeout(()=>{
+        flyPkt(serverEl, clientEl, {
+          bg: p.status>=400?'#1c0610':'#061210',
+          border: statusColor, color: statusColor,
+          label: `${p.status} ${p.statusText}`, w: 140
+        }, null);
+      }, d(200));
+
+      /* Receive response */
+      lightStep(5,'active',d(300));
+      setStepStat(5,'receiving…','var(--accent)',d(300));
+      setTimeout(()=>{
+        lightStep(5,isErr?'error':'done',0);
+        setStepStat(5,p.statusText, statusColor, 0);
+        document.getElementById('tl-fill').style.width='90%';
+
+        /* Parse & deliver */
+        lightStep(6,'active',d(200));
+        setStepStat(6,'parsing…','var(--amber)',d(200));
+        setTimeout(()=>{
+          lightStep(6,isErr?'error':'done',0);
+          setStepStat(6,isErr?'error':'✓ done',isErr?'var(--red)':'var(--green)',0);
+          document.getElementById('tl-fill').style.width='100%';
+          const total=p.dns+p.tcp+p.tls+p.server+p.transfer;
+          document.getElementById('tl-total').textContent=total+'ms';
+          setLatencyBars(p);
+          setResponseContent(p);
+          finish(p, isErr);
+        }, d(p.transfer*8+200));
+      }, d(p.transfer*8+500));
+    }
+  }, d(serverDone)));
+  updateStats();
+}
+
+function lightStep_sl(idx, cls, delay){
+  const t=setTimeout(()=>{
+    const el=document.getElementById('sl-'+idx);
+    if(el) el.className='sl '+cls;
+  }, delay);
+  pipeTimers.push(t);
+}
+
+function finish(p, isErr){
+  const statusColor=p.status>=500?'var(--red)':p.status>=400?'var(--amber)':p.status>=300?'var(--cyan)':'var(--green)';
+  const clientEl=document.getElementById('client-card');
+  if(isErr){
+    errReq++;
+    glow(clientEl,'glow-r');
+    document.getElementById('client-status').textContent=`✗ ${p.statusText}`;
+    document.getElementById('client-status').style.color='var(--red)';
+    document.getElementById('st-status').textContent=p.status||'ERR';
+    document.getElementById('st-status').style.color='var(--red)';
+  } else {
+    okReq++;
+    glow(clientEl,'glow-g');
+    document.getElementById('client-status').textContent=`✓ ${p.statusText}`;
+    document.getElementById('client-status').style.color='var(--green)';
+    document.getElementById('st-status').textContent=p.status;
+    document.getElementById('st-status').style.color=statusColor;
+    latencies.push(p.dns+p.tcp+p.tls+p.server+p.transfer);
+    if(latencies.length>20) latencies.shift();
+  }
+  updateStats();
+  busy=false;
+}
+
+/* ══ AUTO DEMO ══ */
+const AUTO_SEQ=['get','post','put','delete','error','auth','slow','get','timeout','get'];
+let autoTick=0;
+function toggleAuto(){
+  const btn=document.getElementById('auto-btn');
+  if(autoTimer){
+    clearInterval(autoTimer); autoTimer=null;
+    btn.textContent='▶ Auto Demo'; btn.classList.remove('active');
+  } else {
+    btn.textContent='⏹ Stop'; btn.classList.add('active');
+    autoTimer=setInterval(()=>{
+      if(!busy){ setPreset(AUTO_SEQ[autoTick%AUTO_SEQ.length]); autoTick++; }
+    }, d(3200));
+  }
+}
+
+/* ══ INIT ══ */
+addLog('li','[System] API call visualizer ready');
+addLog('li','[System] Click any method button or ▶ Auto Demo to begin');
+
+// Tab switching also updates content
+document.querySelectorAll('.rp-tab').forEach(tab=>{
+  tab.addEventListener('click',()=>{
+    if(currentPreset && document.getElementById('rp-body').innerHTML !== '<span style="color:var(--text3);">// response will appear here…</span>'){
+      setResponseContent(currentPreset);
+    }
+  });
+});
+
+// Start auto demo
+setTimeout(()=>{ if(!autoTimer) toggleAuto(); }, 800);
+</script>
+</body>
+</html>
