@@ -7,6 +7,7 @@ This project is built to simplify and visualize complex system design concepts u
 * Visual representation of system design concepts
 * Easy-to-understand UI
 * Interactive diagrams using HTML, CSS, and JavaScript
+* Attractive Visuals
 * Beginner-friendly learning approach
 
 ## 🛠️ Tech Stack
